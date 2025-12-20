@@ -71,3 +71,7 @@ If you use  **SkewX** for your analysis, please cite it using the following doi:
 <!-- TODO nf-core: Add bibliography of tools and data used in your pipeline -->
 
 An extensive list of references for the tools used by the pipeline can be found in the [`CITATIONS.md`](CITATIONS.md) file.
+
+
+
+- Local setup and initial Git workflow verified by Gazi Abu Rafin.
