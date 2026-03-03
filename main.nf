@@ -37,6 +37,18 @@ if (params.cgi_bedfile) {
 if (!(params.deepvariant_model in ["WGS", "WES", "PACBIO", "ONT_R104", "HYBRID_PACBIO_ILLUMINA"])) {
     exit 1, "DeepVariant model must be one of WGS, WES, PACBIO, ONT_R104, or HYBRID_PACBIO_ILLUMINA"
 }
+// Validate stage parameter
+if (!(params.stage in ["raw", "phased", "haplotagged"])) {
+    exit 1, "Stage must be one of: raw, phased, haplotagged"
+}
+// If phased stage, VCF must be provided
+if (params.stage == "phased" && !params.vcf) {
+    exit 1, "When --stage phased, you must provide --vcf"
+}
+
+if (params.vcf) {
+    ch_vcf_input = Channel.fromPath(params.vcf, checkIfExists: true)
+}   
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     VALIDATE & PRINT PARAMETER SUMMARY
@@ -82,102 +94,160 @@ include {separated_deepvariant} from "./subworkflows/local/deepvariant/main.nf"
 // WORKFLOW: Run main SkewX analysis pipeline
 //
 workflow SKEWX {
-    // parse input sample sheet
+
+   /*
+    =====================================================
+    INPUT PREPARATION
+    =====================================================
+    */
+
     ch_checked_input = INPUT_CHECK(ch_input)
 
-    // put individual id and sample into first element of tuple.
     ch_separate_samples = ch_checked_input
-        .map{individual, sample, bam -> tuple([id: individual, sample: sample], bam)}
+        .map { individual, sample, bam ->
+            tuple([id: individual, sample: sample], bam)
+        }
 
-    // if reads are not mapped, align with minimap2, otherwise assume input bams are aligned
     if (params.ubam) {
         ch_aligned = MINIMAP2(ch_separate_samples, ch_reference)
     } else {
         ch_aligned = ch_separate_samples
     }
 
-    // index aligned bams
     ch_samples = SAMTOOLS_INDEX_SAMPLES(ch_aligned)
 
-    // prepare for merging by grouping
     ch_grouped_bams = ch_samples
-        .map{meta, bam, bai -> tuple(meta.id, meta.sample, bam, bai)} // unpack id, sample to enable grouping by individual id
-        .groupTuple() // group samples by individual
-        .map{individual, samples, bams, bais -> tuple([id: individual, sample: samples], bams, bais)} // merge individual and samples into a variable with id and samples attribute.
-
-    // separate individuals with only one sample to bypass merging
-    (ch_multiple_bams, ch_single_bams) = ch_grouped_bams
-        .branch{
-            multi: it[1].size()>1
-            single: it[1].size()==1
+        .map { meta, bam, bai ->
+            tuple(meta.id, meta.sample, bam, bai)
         }
-    ch_single_bams = ch_single_bams.map{
-        meta, bams, bais -> tuple(meta, bams[0], bais[0])
-    } // unpack bam from list container
+        .groupTuple()
+        .map { individual, samples, bams, bais ->
+            tuple([id: individual, sample: samples], bams, bais)
+        }
+
+    (ch_multiple_bams, ch_single_bams) = ch_grouped_bams.branch {
+        multi: it[1].size() > 1
+        single: it[1].size() == 1
+    }
+
+    ch_single_bams = ch_single_bams.map { meta, bams, bais ->
+        tuple(meta, bams[0], bais[0])
+    }
 
     SAMTOOLS_MERGE(ch_multiple_bams)
         | SAMTOOLS_INDEX_MERGED
-        | mix(ch_single_bams) // add back individuals with single bams
-        | set {ch_merged_bam}
+        | mix(ch_single_bams)
+        | set { ch_merged_bam }
 
-    // variant call merged bam with deepvariant
-    // first, duplicate ch_reference for each merged bam
-    ch_reference_rep_merged = ch_merged_bam
-        .combine(ch_reference.collect())
-        .map{meta, merged_bams, merged_bams_idx, meta_ref, ref, ref_idx -> tuple(meta_ref, ref, ref_idx)}
-    dv_args = channel.from([
-        regions: params.deepvariant_region,
-        model_type: params.deepvariant_model,
-        num_shards: params.deepvariant_num_shards
-    ])
-    (ch_vcf, ch_deepvariant_report) = separated_deepvariant(dv_args, ch_merged_bam, ch_reference)
-        .multiMap{
-            vcf: tuple(it[0], it[1], it[2], it[5])
-            dv_report: tuple(it[0], it[7])
+    /*
+    =====================================================
+    STAGE ROUTING
+    =====================================================
+    */
+
+    if (params.stage == "haplotagged") {
+
+        log.info "Stage: haplotagged — skipping DeepVariant and Whatshap"
+
+        ch_samples_haplotag = ch_merged_bam
+        ch_whatshap_stats_blocks = Channel.empty()
+
+    } else {
+
+        /*
+        ==========================================
+        RAW STAGE → DeepVariant
+        PHASED STAGE → Use provided VCF
+        ==========================================
+        */
+
+        if (params.stage == "raw") {
+
+            ch_reference_rep_merged = ch_merged_bam
+                .combine(ch_reference.collect())
+                .map { meta, merged_bam, merged_bam_idx, meta_ref, ref, ref_idx ->
+                    tuple(meta_ref, ref, ref_idx)
+                }
+
+            dv_args = Channel.from([
+                regions: params.deepvariant_region,
+                model_type: params.deepvariant_model,
+                num_shards: params.deepvariant_num_shards
+            ])
+
+            (ch_vcf, _) = separated_deepvariant(
+                dv_args,
+                ch_merged_bam,
+                ch_reference
+            )
+            .multiMap {
+                vcf: tuple(it[0], it[1], it[2], it[5])
+            }
+
+            ch_vcf_pass = FILTER_PASS(ch_vcf)
+
+            ch_vcf_phased = WHATSHAP_PHASE(
+                ch_vcf_pass,
+                ch_reference_rep_merged
+            )
+
         }
 
-    // filter variants by PASS
-    ch_vcf_pass = FILTER_PASS(ch_vcf)
+        if (params.stage == "phased") {
 
-    // phase variants
-    ch_vcf_phased = WHATSHAP_PHASE(
-        ch_vcf_pass,
-        ch_reference_rep_merged
-    )
+            log.info "Stage: phased — skipping DeepVariant"
 
-    ch_whatshap_stats_blocks = WHATSHAP_STATS(ch_vcf_phased.map{meta, bam, bam_idx, vcf, vcf_idx -> tuple(meta, vcf, vcf_idx)})
+            ch_vcf_phased = ch_merged_bam
+                .combine(ch_vcf_input)
+                .map { meta, bam, bai, vcf ->
+                    tuple(meta, bam, bai, vcf, "${vcf}.tbi")
+                }
 
-    // repeat phased vcf and reference channels, so there are enough items to
-    // match the number of samples being haplotagged.
-    (ch_tmp_samples, ch_reference_rep) = ch_samples
-        .map{meta, bam, bam_idx -> tuple(meta.id, meta.sample, bam, bam_idx)} // unpack meta so vcfs can be added to each sample, based on id
-        .combine( // combine vcfs based on individual id
-            ch_vcf_phased.map{meta, merged_bam, merged_bam_idx, vcf, vcf_idx -> tuple(meta.id, meta.sample, vcf, vcf_idx)},
-            by: 0
+        }
+
+        ch_whatshap_stats_blocks = WHATSHAP_STATS(
+            ch_vcf_phased.map { meta, bam, bam_idx, vcf, vcf_idx ->
+                tuple(meta, vcf, vcf_idx)
+            }
         )
-        .combine(ch_reference.collect()) // repeat reference for each sample
-        .multiMap{id, single_sample, bam, bai, samples, vcf, vcf_idx, ref_id, ref, ref_idx -> // unpack the now horrendously long item into separate channels
-            samples: tuple([id: id, sample: single_sample], bam, bai, vcf, vcf_idx)
-            ref: tuple(ref_idx, ref, ref_idx)
-        }
 
-    // haplotag individual sample bams and index each
-    WHATSHAP_HAPLOTAG(ch_tmp_samples, ch_reference_rep)
-        | SAMTOOLS_INDEX_HAPLOTAG
-        | set {ch_samples_haplotag}
+        (ch_tmp_samples, ch_reference_rep) = ch_samples
+            .map { meta, bam, bam_idx ->
+                tuple(meta.id, meta.sample, bam, bam_idx)
+            }
+            .combine(
+                ch_vcf_phased.map {
+                    meta, merged_bam, merged_bam_idx, vcf, vcf_idx ->
+                        tuple(meta.id, meta.sample, vcf, vcf_idx)
+                },
+                by: 0
+            )
+            .combine(ch_reference.collect())
+            .multiMap { id, single_sample, bam, bai,
+                        samples, vcf, vcf_idx,
+                        ref_id, ref, ref_idx ->
+
+                samples: tuple([id: id, sample: single_sample], bam, bai, vcf, vcf_idx)
+                ref: tuple(ref_idx, ref, ref_idx)
+            }
+
+        WHATSHAP_HAPLOTAG(ch_tmp_samples, ch_reference_rep)
+            | SAMTOOLS_INDEX_HAPLOTAG
+            | set { ch_samples_haplotag }
+
+    }
+
+    /*
+    =====================================================
+    DOWNSTREAM ANALYSIS (COMMON TO ALL STAGES)
+    =====================================================
+    */
+
     (ch_mosdepth, ch_mosdepth_report_results) = MOSDEPTH(ch_samples_haplotag)
 
-    // haplotag merged sample bams and index each
-    WHATSHAP_HAPLOTAG_MERGED(ch_vcf_phased, ch_reference_rep)
-        | SAMTOOLS_INDEX_HAPLOTAG_MERGED
-        | set {ch_merged_samples_haplotag}
-
-    (_, ch_mosdepth_report_results_merged) = MOSDEPTH_MERGED(ch_merged_samples_haplotag)
-
-    // repeat cigx bed to match each haplotagged sample
     (ch_tmp_samples_haplotag, ch_cgibed_rep) = ch_samples_haplotag
         .combine(ch_cgibed.collect())
-        .multiMap{it ->
+        .multiMap { it ->
             samples_haplotag: tuple(it[0], it[1], it[2])
             cgibed: tuple(it[3], it[4])
         }
@@ -186,33 +256,13 @@ workflow SKEWX {
 
     ch_clustered_reads = R_CLUSTERBYMETH(ch_hpreads, ch_cgibed_rep)
 
-    // prepare inputs for plotting mosdepth results
-    ch_mosdepth_report_results_merged
-        .filter{it[0].sample.size()>1} // remove merged samples with only one constituent samplebi
-        .map{it -> tuple(it[0].id, it[0].sample, it[1])} // extract individual id, sample, and *.global.dist.txt from channel
-        .mix(ch_mosdepth_report_results.map{it -> tuple(it[0].id, it[0].sample, it[1])}) // mix in mosdepth results for single samples
-        .groupTuple() // group by individual id
-        .map{ it -> tuple([id: it[0], sample: it[1]], it[2])} // merge id and samples into tuple
-        .set{ch_mosdepth_all_report_results}
-
-    // nanocomp
-    ch_merged_samples_haplotag
-        .filter{it[0].sample.size()>1} // only include merged bams constisting of multiple samples
-        .map{it -> tuple(it[0].id, it[0].sample, it[1], it[2])}
-        .mix(ch_samples_haplotag.map{it->tuple(it[0].id, it[0].sample, it[1], it[2])})
-        .groupTuple()
-        .map{it -> tuple([id: it[0], sample: it[1]], it[2], it[3])}
-        .set{ch_all_samples_haplotag}
-
-    // put together report
     book = reporting(
-        ch_mosdepth_all_report_results,
-        ch_all_samples_haplotag,
+        ch_mosdepth_report_results,
+        ch_samples_haplotag,
         ch_whatshap_stats_blocks,
         ch_clustered_reads,
         ch_cgibed
     )
-
 }
 
 /*
