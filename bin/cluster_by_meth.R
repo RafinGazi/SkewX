@@ -83,9 +83,16 @@ calculate_skew_by_block <- function(clustered_reads, haplotyped_reads){
   skew_by_block <- counts_by_block %>%
     unite(combi, assigned_X, HP) %>%
     mutate(combi = recode(combi, "Xa_1" = "H1_Xa", "Xa_2" = "H2_Xa", "Xi_1" = "H1_Xi", "Xi_2" = "H2_Xi")) %>%
-    pivot_wider(id_cols = PS, names_from = combi, values_from = counts, values_fill = 0) %>%
-    mutate(H1_Xa_skew = (H1_Xa + H2_Xi) / (H1_Xa + H1_Xi + H2_Xa + H2_Xi))
+    pivot_wider(id_cols = PS, names_from = combi, values_from = counts, values_fill = 0)
 
+      if(!"H1_Xa" %in% colnames(skew_by_block)) skew_by_block$H1_Xa <- 0
+      if(!"H1_Xi" %in% colnames(skew_by_block)) skew_by_block$H1_Xi <- 0
+      if(!"H2_Xa" %in% colnames(skew_by_block)) skew_by_block$H2_Xa <- 0
+      if(!"H2_Xi" %in% colnames(skew_by_block)) skew_by_block$H2_Xi <- 0
+
+      skew_by_block <- skew_by_block %>%
+        mutate(H1_Xa_skew = (H1_Xa + H2_Xi) / (H1_Xa + H1_Xi + H2_Xa + H2_Xi))
+        
   return(skew_by_block)
 }
 #This updated version uses the foreach function to iterate over the rows in parallel, and the pb$tick() line updates the progress bar for each iteration. The results are combined using the .combine = bind_rows argument, and the required packages are specified using the .packages argument.

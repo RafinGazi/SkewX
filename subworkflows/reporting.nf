@@ -13,15 +13,10 @@ workflow reporting {
 
     main:
         // prepare mosdepth coverage report
-        // add script into channels
-        ch_plot_dist_script = Channel.fromPath("https://raw.githubusercontent.com/brentp/mosdepth/v0.3.6/scripts/plot-dist.py")
-        (ch_global_dist_bysample, ch_plot_dist_script_rep) = mosdepth_report_results
-            .combine(ch_plot_dist_script)
-            .multiMap{it ->
-                dists: tuple(it[0], it[1])
-                scripts: it[2]
-            }
-        ch_mosdepth_dist_report = MOSDEPTH_PLOTDIST(ch_plot_dist_script_rep, ch_global_dist_bysample)
+        ch_global_dist_bysample = mosdepth_report_results
+            .map{it -> tuple(it[0], it[1])}
+
+        ch_mosdepth_dist_report = MOSDEPTH_PLOTDIST(ch_global_dist_bysample)
 
         // prepare nanocomp reports
         ch_nanocomp = NANOCOMP(haplotagged_samples)

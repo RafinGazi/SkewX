@@ -36,7 +36,7 @@ process REPORT_INDIVIDUAL {
     sed -i "s/ext_CGI_bed_file/${cgi_bed}/g" "${meta.id}_report.qmd"
 
     # sub tissue names into report
-    sed -i 's/ext_all_tissues_list/${meta.sample.findAll { !(it instanceof List)}.join('", "')}/g' "${meta.id}_report.qmd"
+    sed -i "s/ext_all_tissues_list/${meta.sample}/g" "${meta.id}_report.qmd"
 
     # turn text files into qmd for code formatting
     echo '```' | cat - ${whatshap_stats} > "_${whatshap_stats.baseName}.qmd"

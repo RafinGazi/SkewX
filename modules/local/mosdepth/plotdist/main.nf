@@ -10,7 +10,6 @@ process MOSDEPTH_PLOTDIST {
         'quay.io/biocontainers/python:3.8.3' }"
 
     input:
-    path(plot_dist_script)
     tuple val(meta), path(global_dist)
 
     output:
@@ -18,7 +17,7 @@ process MOSDEPTH_PLOTDIST {
 
     script:
     """
-    python3 "${plot_dist_script}" *.global.dist.txt
+    python3 ${projectDir}/assets/plot-dist.py *.global.dist.txt
     mv dist.html ${meta.id}.dist.html
     """
     

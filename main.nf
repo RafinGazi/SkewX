@@ -256,13 +256,15 @@ workflow SKEWX {
 
     ch_clustered_reads = R_CLUSTERBYMETH(ch_hpreads, ch_cgibed_rep)
 
-    book = reporting(
-        ch_mosdepth_report_results,
-        ch_samples_haplotag,
-        ch_whatshap_stats_blocks,
-        ch_clustered_reads,
-        ch_cgibed
+    if (params.stage != "haplotagged") {
+        book = reporting(
+            ch_mosdepth_report_results,
+            ch_samples_haplotag,
+            ch_whatshap_stats_blocks,
+            ch_clustered_reads,
+            ch_cgibed
     )
+}
 }
 
 /*
