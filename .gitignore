@@ -6,3 +6,11 @@ results/
 testing/
 testing*
 *.pyc
+*.bam
+*.bam.bai
+*.vcf.gz
+*.vcf.gz.tbi
+references/
+test_haplo/
+test_phased/
+null/

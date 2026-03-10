@@ -41,14 +41,7 @@ if (!(params.deepvariant_model in ["WGS", "WES", "PACBIO", "ONT_R104", "HYBRID_P
 if (!(params.stage in ["raw", "phased", "haplotagged"])) {
     exit 1, "Stage must be one of: raw, phased, haplotagged"
 }
-// If phased stage, VCF must be provided
-if (params.stage == "phased" && !params.vcf) {
-    exit 1, "When --stage phased, you must provide --vcf"
-}
-
-if (params.vcf) {
-    ch_vcf_input = Channel.fromPath(params.vcf, checkIfExists: true)
-}   
+   
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     VALIDATE & PRINT PARAMETER SUMMARY
@@ -89,7 +82,7 @@ include {SAMTOOLS_VIEWHP} from "./modules/local/samtools/view_hp/main.nf"
 include {R_CLUSTERBYMETH} from "./modules/local/R/cluster_by_meth/main.nf"
 include {reporting} from "./subworkflows/reporting.nf"
 include {separated_deepvariant} from "./subworkflows/local/deepvariant/main.nf"
-
+include {INFER_KARYOTYPE} from "./modules/local/R/infer_karyotype/main.nf"
 //
 // WORKFLOW: Run main SkewX analysis pipeline
 //
@@ -104,8 +97,13 @@ workflow SKEWX {
     ch_checked_input = INPUT_CHECK(ch_input)
 
     ch_separate_samples = ch_checked_input
-        .map { individual, sample, bam ->
+        .map { individual, sample, bam, vcf ->
             tuple([id: individual, sample: sample], bam)
+        }
+
+    ch_vcf_per_individual = ch_checked_input
+        .map { individual, sample, bam, vcf ->
+            tuple(individual, file(vcf))
         }
 
     if (params.ubam) {
@@ -198,14 +196,21 @@ workflow SKEWX {
             log.info "Stage: phased — skipping DeepVariant"
 
             ch_vcf_phased = ch_merged_bam
-                .combine(ch_vcf_input)
-                .map { meta, bam, bai, vcf ->
+                .map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) }
+                .join(ch_vcf_per_individual, by: 0)
+                .map { id, meta, bam, bai, vcf ->
                     tuple(meta, bam, bai, vcf, "${vcf}.tbi")
                 }
 
         }
 
         ch_whatshap_stats_blocks = WHATSHAP_STATS(
+            ch_vcf_phased.map { meta, bam, bam_idx, vcf, vcf_idx ->
+                tuple(meta, vcf, vcf_idx)
+            }
+        )
+
+        ch_karyotype = INFER_KARYOTYPE(
             ch_vcf_phased.map { meta, bam, bam_idx, vcf, vcf_idx ->
                 tuple(meta, vcf, vcf_idx)
             }
