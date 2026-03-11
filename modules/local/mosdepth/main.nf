@@ -10,8 +10,9 @@ process MOSDEPTH {
     tuple val(meta), path(haplotagged_bam), path(sample_bam_idx)
 
     output:
-    tuple val(meta), path('*.bed.gz'), path('*.bed.gz.csi')
-    tuple val(meta), path('*mosdepth.global.dist.txt'), path('*mosdepth.region.dist.txt'), path('*mosdepth.summary.txt')
+    tuple val(meta), path('*.bed.gz'), path('*.bed.gz.csi'),                                                               emit: bed
+    tuple val(meta), path('*mosdepth.global.dist.txt'), path('*mosdepth.region.dist.txt'), path('*mosdepth.summary.txt'), emit: dist
+    tuple val(meta), path('*mosdepth.summary.txt'),                                                                        emit: summary
 
     script:
     """

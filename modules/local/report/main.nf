@@ -10,16 +10,20 @@ process REPORT_INDIVIDUAL {
           path(whatshap_blocks),
           path(clustered_reads_tsv),
           path(skew_tsv),
+          path(karyotype_tsv),
+          path(karyotype_plot),
           path(cgi_bed),
           path(report_template)
 
     output:
     path("${meta.id}_report.qmd"), emit: qmds
-    path(htmls), emit: htmls
+    path(htmls),                   emit: htmls
     path("_${whatshap_stats.baseName}.qmd"), emit: whatshap_stats
-    path(whatshap_blocks), emit: whatshap_blocks
-    path(clustered_reads_tsv), emit: clustered_reads
-    path(skew_tsv), emit: skew_tsv
+    path(whatshap_blocks),         emit: whatshap_blocks
+    path(clustered_reads_tsv),     emit: clustered_reads
+    path(skew_tsv),                emit: skew_tsv
+    path(karyotype_tsv),           emit: karyotype_tsv
+    path(karyotype_plot),          emit: karyotype_plot
 
     script:
     """
@@ -37,6 +41,12 @@ process REPORT_INDIVIDUAL {
 
     # sub tissue names into report
     sed -i "s/ext_all_tissues_list/${meta.sample}/g" "${meta.id}_report.qmd"
+
+    # sub karyotype tsv path into report
+    sed -i "s/ext_karyotype_tsv/${karyotype_tsv}/g" "${meta.id}_report.qmd"
+
+    # sub karyotype plot path into report
+    sed -i "s/ext_karyotype_plot/${karyotype_plot}/g" "${meta.id}_report.qmd"
 
     # turn text files into qmd for code formatting
     echo '```' | cat - ${whatshap_stats} > "_${whatshap_stats.baseName}.qmd"
@@ -63,6 +73,8 @@ process REPORT_BOOK {
     path(whatshap_blocks)
     path(clustered_reads)
     path(skews)
+    path(karyotype_tsvs)
+    path(karyotype_plots)
     path(cgi_bed)
 
     output:
@@ -84,6 +96,4 @@ process REPORT_BOOK {
 
     quarto render
     """
-
-
 }

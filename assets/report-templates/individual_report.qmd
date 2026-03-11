@@ -397,3 +397,144 @@ system(tarcmd)
 
 Skewed X inactivation can be deleterious if a disease-causing variant is on the preferentially active allele, or protective if the variant is on the preferentially inactive allele.
 This can be determined by finding the haplotype block that contains the variant, checking which haplotype the variant is on, and then checking the skew orientation in that block.
+
+
+
+## Karyotype
+
+This section reports the inferred sex chromosome karyotype for this individual, based on sequencing coverage ratios from mosdepth 1Mb windowed output. The approach is inspired by BeXY (Caduff et al. 2024, Genome Biology & Evolution), which showed that rounding the chrX/autosome and chrY/autosome coverage ratios to the nearest 0.5 reliably infers integer copy counts for each sex chromosome.
+
+Autosomes chr18 and chr21 are used as the coverage baseline. PAR1, PAR2 and the centromere are excluded from arm-level calculations to avoid artefacts from repeat-rich and pseudoautosomal regions (Nurk et al. 2022, Altemose et al. 2022).
+
+### Karyotype call
+```{r}
+#| label: karyotype-summary
+#| echo: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(gt)
+
+karyotype_tsv <- "ext_karyotype_tsv"
+kary <- read_tsv(karyotype_tsv, show_col_types = FALSE)
+
+# summary table
+kary %>%
+    select(individual, karyotype, karyotype_conf, x_copies, y_copies,
+           chrX_ratio, chrY_ratio, auto_mean_cov) %>%
+    gt() %>%
+    tab_header(
+        title    = md("**Inferred Karyotype**"),
+        subtitle = "Coverage ratio method (BeXY-inspired rounding)"
+    ) %>%
+    cols_label(
+        individual     = "Individual",
+        karyotype      = "Karyotype",
+        karyotype_conf = "Confidence",
+        x_copies       = "X copies",
+        y_copies       = "Y copies",
+        chrX_ratio     = "chrX/Autosome",
+        chrY_ratio     = "chrY/Autosome",
+        auto_mean_cov  = "Autosomal mean coverage"
+    ) %>%
+    tab_style(
+        style = cell_fill(color = "#d4edda"),
+        locations = cells_body(
+            columns = karyotype,
+            rows    = karyotype_conf == "HIGH"
+        )
+    ) %>%
+    tab_style(
+        style = cell_fill(color = "#fff3cd"),
+        locations = cells_body(
+            columns = karyotype,
+            rows    = karyotype_conf == "MEDIUM"
+        )
+    ) %>%
+    tab_style(
+        style = cell_fill(color = "#f8d7da"),
+        locations = cells_body(
+            columns = karyotype,
+            rows    = karyotype_conf == "LOW"
+        )
+    ) %>%
+    opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
+```
+
+### Coverage ratio plot
+
+The bar chart below shows mean sequencing coverage for chr18, chr21, chrX and chrY, each normalised to the autosomal baseline (average of chr18 and chr21). Reference lines indicate expected coverage for 1 copy (0.5x), 2 copies (1.0x) and 3 copies (1.5x). The karyotype call and confidence level are shown in the plot subtitle.
+```{r}
+#| label: karyotype-plot
+#| echo: false
+#| fig-cap: "Coverage ratio plot. Bars show mean coverage relative to autosomal baseline. Reference lines indicate expected copy number levels."
+
+knitr::include_graphics("ext_karyotype_plot")
+```
+
+### X chromosome arm analysis
+
+This table shows the masked mean coverage for the Xp and Xq arms separately, after excluding PAR1, PAR2 and the centromere. A large imbalance between arms may indicate a structural abnormality such as an Xp or Xq deletion or an isochromosome.
+```{r}
+#| label: karyotype-arms
+#| echo: false
+
+kary %>%
+    select(individual, xp_mean_cov, xq_mean_cov, xp_xq_ratio) %>%
+    gt() %>%
+    tab_header(title = md("**Xp / Xq Arm Coverage**")) %>%
+    cols_label(
+        individual  = "Individual",
+        xp_mean_cov = "Xp mean coverage",
+        xq_mean_cov = "Xq mean coverage",
+        xp_xq_ratio = "Xp/Xq ratio"
+    ) %>%
+    tab_style(
+        style = cell_fill(color = "#fff3cd"),
+        locations = cells_body(
+            columns = xp_xq_ratio,
+            rows    = xp_xq_ratio < 0.6 | xp_xq_ratio > 1.67
+        )
+    ) %>%
+    opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
+```
+
+### Flags
+```{r}
+#| label: karyotype-flags
+#| echo: false
+
+if (kary$flags == "none") {
+    cat("No abnormality flags raised for this individual.")
+} else {
+    flags     <- strsplit(kary$flags,           "\\|")[[1]]
+    confs     <- strsplit(kary$flag_confidence, "\\|")[[1]]
+    reasons   <- strsplit(kary$flag_reason,     " \\|\\| ")[[1]]
+    lits      <- strsplit(kary$flag_literature, " \\|\\| ")[[1]]
+
+    data.frame(
+        Flag        = flags,
+        Confidence  = confs,
+        Reason      = reasons,
+        Literature  = lits
+    ) %>%
+        gt() %>%
+        tab_header(title = md("**X Chromosome Abnormality Flags**")) %>%
+        tab_style(
+            style = cell_fill(color = "#fff3cd"),
+            locations = cells_body(rows = Confidence == "MEDIUM")
+        ) %>%
+        tab_style(
+            style = cell_fill(color = "#f8d7da"),
+            locations = cells_body(rows = Confidence == "HIGH")
+        ) %>%
+        tab_style(
+            style = cell_text(size = "small"),
+            locations = cells_body(columns = c(Reason, Literature))
+        ) %>%
+        opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
+}
+```
+
+{{< downloadthis ext_karyotype_tsv dname="ext_meta_id_karyotype" label="Download karyotype results" icon="file-earmark-arrow-down" type="secondary" class="data-button" id="karyotype_tsv" >}}

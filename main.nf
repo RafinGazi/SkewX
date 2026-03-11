@@ -4,14 +4,11 @@
     SkewX: A Nextflow pipeline for skewed X inactivation analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Github : https://github.com/QGouil/SkewX
-
     Publication: https://doi.org/10.1101/gr.279396.124
-
 ----------------------------------------------------------------------------------------
 */
 
 nextflow.enable.dsl = 2
-
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -19,7 +16,6 @@ nextflow.enable.dsl = 2
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-// Check mandatory parameters
 if (params.input) {
     ch_input = Channel.fromPath(params.input, checkIfExists: true)
 } else { exit 1, 'Input sample sheet not specified!' }
@@ -37,11 +33,10 @@ if (params.cgi_bedfile) {
 if (!(params.deepvariant_model in ["WGS", "WES", "PACBIO", "ONT_R104", "HYBRID_PACBIO_ILLUMINA"])) {
     exit 1, "DeepVariant model must be one of WGS, WES, PACBIO, ONT_R104, or HYBRID_PACBIO_ILLUMINA"
 }
-// Validate stage parameter
 if (!(params.stage in ["raw", "phased", "haplotagged"])) {
     exit 1, "Stage must be one of: raw, phased, haplotagged"
 }
-   
+
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     VALIDATE & PRINT PARAMETER SUMMARY
@@ -52,21 +47,12 @@ WorkflowMain.initialise(workflow, params, log)
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    NAMED WORKFLOW FOR PIPELINE
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-//include { RRMS } from './workflows/rrms'
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Define processes and modules
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 include {INPUT_CHECK} from './subworkflows/local/input_check.nf'
 include {MINIMAP2} from "./modules/local/minimap2/main.nf"
 include {SAMTOOLS_MERGE} from "./modules/local/samtools/merge/main.nf"
-// two processes needed as two sets of bams are indexed.
 include {SAMTOOLS_INDEX as SAMTOOLS_INDEX_SAMPLES} from "./modules/local/samtools/index/main.nf"
 include {SAMTOOLS_INDEX as SAMTOOLS_INDEX_MERGED} from "./modules/local/samtools/index/main.nf"
 include {SAMTOOLS_INDEX as SAMTOOLS_INDEX_HAPLOTAG} from "./modules/local/samtools/index/main.nf"
@@ -83,12 +69,13 @@ include {R_CLUSTERBYMETH} from "./modules/local/R/cluster_by_meth/main.nf"
 include {reporting} from "./subworkflows/reporting.nf"
 include {separated_deepvariant} from "./subworkflows/local/deepvariant/main.nf"
 include {INFER_KARYOTYPE} from "./modules/local/R/infer_karyotype/main.nf"
+
 //
 // WORKFLOW: Run main SkewX analysis pipeline
 //
 workflow SKEWX {
 
-   /*
+    /*
     =====================================================
     INPUT PREPARATION
     =====================================================
@@ -152,13 +139,6 @@ workflow SKEWX {
 
     } else {
 
-        /*
-        ==========================================
-        RAW STAGE → DeepVariant
-        PHASED STAGE → Use provided VCF
-        ==========================================
-        */
-
         if (params.stage == "raw") {
 
             ch_reference_rep_merged = ch_merged_bam
@@ -210,12 +190,6 @@ workflow SKEWX {
             }
         )
 
-        ch_karyotype = INFER_KARYOTYPE(
-            ch_vcf_phased.map { meta, bam, bam_idx, vcf, vcf_idx ->
-                tuple(meta, vcf, vcf_idx)
-            }
-        )
-
         (ch_tmp_samples, ch_reference_rep) = ch_samples
             .map { meta, bam, bam_idx ->
                 tuple(meta.id, meta.sample, bam, bam_idx)
@@ -248,7 +222,20 @@ workflow SKEWX {
     =====================================================
     */
 
-    (ch_mosdepth, ch_mosdepth_report_results) = MOSDEPTH(ch_samples_haplotag)
+    // MOSDEPTH runs on full BAM (chrX_Y_18_21)
+    // .bed     → INFER_KARYOTYPE
+    // .dist    → reporting (coverage plots)
+    // .summary → INFER_KARYOTYPE
+    MOSDEPTH(ch_samples_haplotag)
+
+    // Karyotype — runs in parallel, does not block main pipeline
+    ch_karyotype = INFER_KARYOTYPE(
+        MOSDEPTH.out.bed
+            .join(MOSDEPTH.out.summary, by: 0)
+            .map { meta, bed_gz, bed_gz_csi, summary_txt ->
+                tuple(meta, bed_gz, bed_gz_csi, summary_txt)
+            }
+    )
 
     (ch_tmp_samples_haplotag, ch_cgibed_rep) = ch_samples_haplotag
         .combine(ch_cgibed.collect())
@@ -263,13 +250,15 @@ workflow SKEWX {
 
     if (params.stage != "haplotagged") {
         book = reporting(
-            ch_mosdepth_report_results,
+            MOSDEPTH.out.dist,
             ch_samples_haplotag,
             ch_whatshap_stats_blocks,
             ch_clustered_reads,
-            ch_cgibed
-    )
-}
+            ch_cgibed,
+            ch_karyotype.karyotype_tsv,
+            ch_karyotype.karyotype_plot
+        )
+    }
 }
 
 /*
