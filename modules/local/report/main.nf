@@ -94,6 +94,8 @@ process REPORT_BOOK {
     # add downloadthis quarto extension
     unzip ${projectDir}/assets/report-templates/_extensions.zip -d ./
 
+    export XDG_CACHE_HOME="./quarto_cache"
+    mkdir -p \$XDG_CACHE_HOME
     quarto render
     """
 }
