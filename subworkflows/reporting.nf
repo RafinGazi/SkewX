@@ -44,7 +44,7 @@ workflow reporting {
                 it[10],            // skew_tsv
                 it[11],            // karyotype_tsv
                 it[12],             // karyotype_plot
-                it[13]              // cohort_tsv
+                it[13],              // cohort_tsv
                 it[14]              // cohort_plot (new)
             )}
             .combine(cgi_bed.map{ it -> it[1] })
