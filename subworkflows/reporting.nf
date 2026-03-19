@@ -13,6 +13,7 @@ workflow reporting {
         karyotype_tsv           // channel containing karyotype TSV per individual
         karyotype_plot          // channel containing karyotype coverage plot per individual
         cohort_tsv              // channel containing all karyotype's cohort tsv
+        cohort_plot
 
     main:
         // prepare mosdepth coverage report
@@ -33,6 +34,7 @@ workflow reporting {
             .join(karyotype_tsv.map{ it -> tuple(it[0].id, it[1]) })
             .join(karyotype_plot.map{ it -> tuple(it[0].id, it[1]) })
             .join(cohort_tsv.map{ it -> tuple(it[0].id, it[1]) })
+            .join(cohort_plot.map{ it -> tuple(it[0].id, it[1]) })
             .map{ it -> tuple(
                 [id: it[0], sample: it[1]],
                 it[2] + [it[4]],   // htmls
@@ -43,6 +45,7 @@ workflow reporting {
                 it[11],            // karyotype_tsv
                 it[12],             // karyotype_plot
                 it[13]              // cohort_tsv
+                it[14]              // cohort_plot (new)
             )}
             .combine(cgi_bed.map{ it -> it[1] })
             .combine(channel.fromPath("${projectDir}/assets/report-templates/individual_report.qmd", checkIfExists: true))
@@ -66,6 +69,7 @@ workflow reporting {
             ch_reporting_files.karyotype_tsv.collect(),
             ch_reporting_files.karyotype_plot.collect(),
             ch_reporting_files.cohort_tsv.collect(),
+            ch_reporting_files.cohort_plot.collect(),
             cgi_bed.map{ it -> it[1] }
         )
 
