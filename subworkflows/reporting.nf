@@ -12,6 +12,7 @@ workflow reporting {
         cgi_bed                 // single-item channel containing CGI bed file
         karyotype_tsv           // channel containing karyotype TSV per individual
         karyotype_plot          // channel containing karyotype coverage plot per individual
+        cohort_tsv              // channel containing all karyotype's cohort tsv
 
     main:
         // prepare mosdepth coverage report
@@ -31,6 +32,7 @@ workflow reporting {
             .join(clustered_reads.map{ it -> tuple(it[0].id, it[0].sample, it[1], it[2]) }.groupTuple())
             .join(karyotype_tsv.map{ it -> tuple(it[0].id, it[1]) })
             .join(karyotype_plot.map{ it -> tuple(it[0].id, it[1]) })
+            .join(cohort_tsv.map{ it -> tuple(it[0].id, it[1]) })
             .map{ it -> tuple(
                 [id: it[0], sample: it[1]],
                 it[2] + [it[4]],   // htmls
@@ -39,7 +41,8 @@ workflow reporting {
                 it[9],             // clustered_reads
                 it[10],            // skew_tsv
                 it[11],            // karyotype_tsv
-                it[12]             // karyotype_plot
+                it[12],             // karyotype_plot
+                it[13]              // cohort_tsv
             )}
             .combine(cgi_bed.map{ it -> it[1] })
             .combine(channel.fromPath("${projectDir}/assets/report-templates/individual_report.qmd", checkIfExists: true))
@@ -62,6 +65,7 @@ workflow reporting {
             ch_reporting_files.skew_tsv.collect(),
             ch_reporting_files.karyotype_tsv.collect(),
             ch_reporting_files.karyotype_plot.collect(),
+            ch_reporting_files.cohort_tsv.collect(),
             cgi_bed.map{ it -> it[1] }
         )
 

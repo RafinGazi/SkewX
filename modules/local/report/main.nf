@@ -12,6 +12,8 @@ process REPORT_INDIVIDUAL {
           path(skew_tsv),
           path(karyotype_tsv),
           path(karyotype_plot),
+          path(cohort_tsv),
+          path(cohort_plot),
           path(cgi_bed),
           path(report_template)
 
@@ -47,6 +49,12 @@ process REPORT_INDIVIDUAL {
 
     # sub karyotype plot path into report
     sed -i "s/ext_karyotype_plot/${karyotype_plot}/g" "${meta.id}_report.qmd"
+
+    # sub cohort tsv path into report
+    sed -i "s/ext_cohort_tsv/${cohort_tsv}/g" "${meta.id}_report.qmd"
+
+    # sub cohort plot path into report
+    sed -i "s/ext_cohort_plot/${cohort_plot}/g" "${meta.id}_report.qmd"
 
     # turn text files into qmd for code formatting
     echo '```' | cat - ${whatshap_stats} > "_${whatshap_stats.baseName}.qmd"

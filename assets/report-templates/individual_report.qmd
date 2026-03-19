@@ -538,3 +538,66 @@ if (kary$flags == "none") {
 ```
 
 {{< downloadthis ext_karyotype_tsv dname="ext_meta_id_karyotype" label="Download karyotype results" icon="file-earmark-arrow-down" type="secondary" class="data-button" id="karyotype_tsv" >}}
+
+## Cohort QC
+
+```{r}
+#| label: cohort-qc
+#| echo: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(gt)
+
+cohort_tsv <- "ext_cohort_tsv"
+karyotype_tsv <- "ext_karyotype_tsv"
+
+cohort <- read_tsv(cohort_tsv, show_col_types = FALSE)
+kary   <- read_tsv(karyotype_tsv, show_col_types = FALSE)
+
+sample_id <- kary$individual[1]
+
+# get this sample row
+row <- cohort %>%
+    filter(individual == sample_id)
+
+if (nrow(row) == 0) {
+    cat("This sample was not found in cohort QC results.")
+} else {
+    cat(sprintf("Sample %s compared against cohort distribution.\n\n", sample_id))
+    row %>%
+        required_cols <- c("individual", "chrX_ratio", "chrY_ratio", "karyotype", "cohort_qc_flag")
+
+        missing_cols <- setdiff(required_cols, colnames(row))
+
+        if (length(missing_cols) > 0) {
+            cat("Missing expected columns in cohort results:", paste(missing_cols, collapse=", "))
+        } else {
+
+            row %>%
+                select(all_of(required_cols)) %>%
+                gt() %>%
+                tab_header(
+                    title = md("**Cohort-level QC Check**"),
+                    subtitle = "Position of this sample relative to cohort clusters"
+                ) %>%
+                cols_label(
+                    individual       = "Individual",
+                    chrX_ratio       = "RX",
+                    chrY_ratio       = "RY",
+                    karyotype        = "Karyotype",
+                    cohort_qc_flag   = "QC Status"
+                ) %>%
+                tab_style(
+                    style = cell_fill(color = "#d4edda"),
+                    locations = cells_body(rows = cohort_qc_flag == "PASS")
+                ) %>%
+                tab_style(
+                    style = cell_fill(color = "#f8d7da"),
+                    locations = cells_body(rows = cohort_qc_flag != "PASS")
+                ) %>%
+                opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
+
+}
+```

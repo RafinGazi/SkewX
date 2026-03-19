@@ -68,7 +68,8 @@ include {SAMTOOLS_VIEWHP} from "./modules/local/samtools/view_hp/main.nf"
 include {R_CLUSTERBYMETH} from "./modules/local/R/cluster_by_meth/main.nf"
 include {reporting} from "./subworkflows/reporting.nf"
 include {separated_deepvariant} from "./subworkflows/local/deepvariant/main.nf"
-include {INFER_KARYOTYPE} from "./modules/local/R/infer_karyotype/main.nf"
+include { INFER_KARYOTYPE } from './modules/local/py/infer_karyotype/main'
+include { COHORT_KARYOTYPE_QC } from './modules/local/py/cohort_karyotype_qc/main'
 
 //
 // WORKFLOW: Run main SkewX analysis pipeline
@@ -237,6 +238,10 @@ workflow SKEWX {
             }
     )
 
+    ch_cohort = COHORT_KARYOTYPE_QC(
+        ch_karyotype.karyotype_tsv.collect()
+)
+
     (ch_tmp_samples_haplotag, ch_cgibed_rep) = ch_samples_haplotag
         .combine(ch_cgibed.collect())
         .multiMap { it ->
@@ -256,7 +261,9 @@ workflow SKEWX {
             ch_clustered_reads,
             ch_cgibed,
             ch_karyotype.karyotype_tsv,
-            ch_karyotype.karyotype_plot
+            ch_karyotype.karyotype_plot,
+            ch_cohort.qc_tsv,
+            ch_cohort.qc_plot
         )
     }
 }
