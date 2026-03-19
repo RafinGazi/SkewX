@@ -74,19 +74,21 @@ process REPORT_BOOK {
         'ghcr.io/qgouil/skewx-r:0.2' }"
 
     input:
-    path(book_template_files)
-    path(qmds)
-    path(mosdepth_htmls)
-    path(whatshap_stats)
-    path(whatshap_blocks)
-    path(clustered_reads)
-    path(skews)
-    path(karyotype_tsvs)
-    path(karyotype_plots)
-    path(cgi_bed)
+        path(book_template_files)
+        path(qmds)
+        path(mosdepth_htmls)
+        path(whatshap_stats)
+        path(whatshap_blocks)
+        path(clustered_reads)
+        path(skews)
+        path(karyotype_tsvs)
+        path(karyotype_plots)
+        path(cohort_tsvs)     
+        path(cohort_plots)    
+        path(cgi_bed)
 
     output:
-    path("_book")
+        path("_book")
 
     script:
     """

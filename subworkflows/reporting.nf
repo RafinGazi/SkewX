@@ -68,8 +68,8 @@ workflow reporting {
             ch_reporting_files.skew_tsv.collect(),
             ch_reporting_files.karyotype_tsv.collect(),
             ch_reporting_files.karyotype_plot.collect(),
-            ch_reporting_files.cohort_tsv.collect(),
-            ch_reporting_files.cohort_plot.collect(),
+            cohort_tsv.collect(),
+            cohort_plot.collect(),
             cgi_bed.map{ it -> it[1] }
         )
 
