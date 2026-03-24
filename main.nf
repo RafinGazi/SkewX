@@ -174,14 +174,28 @@ workflow SKEWX {
 
         if (params.stage == "phased") {
 
-            log.info "Stage: phased — skipping DeepVariant"
+            log.info "Stage: phased — running Whatshap phasing"
 
-            ch_vcf_phased = ch_merged_bam
+            // Prepare input VCF + BAM
+            ch_vcf_input = ch_merged_bam
                 .map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) }
                 .join(ch_vcf_per_individual, by: 0)
                 .map { id, meta, bam, bai, vcf ->
                     tuple(meta, bam, bai, vcf, "${vcf}.tbi")
                 }
+
+            // Prepare reference (same format as raw stage)
+            ch_reference_rep_merged = ch_merged_bam
+                .combine(ch_reference.collect())
+                .map { meta, merged_bam, merged_bam_idx, meta_ref, ref, ref_idx ->
+                    tuple(meta_ref, ref, ref_idx)
+                }
+
+            // Run Whatshap phasing
+            ch_vcf_phased = WHATSHAP_PHASE(
+                ch_vcf_input,
+                ch_reference_rep_merged
+            )            
 
         }
 
