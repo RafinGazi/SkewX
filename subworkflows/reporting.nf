@@ -33,8 +33,8 @@ workflow reporting {
             .join(clustered_reads.map{ it -> tuple(it[0].id, it[0].sample, it[1], it[2]) }.groupTuple())
             .join(karyotype_tsv.map{ it -> tuple(it[0].id, it[1]) })
             .join(karyotype_plot.map{ it -> tuple(it[0].id, it[1]) })
-            .join(cohort_tsv.map{ it -> tuple(it[0].id, it[1]) })
-            .join(cohort_plot.map{ it -> tuple(it[0].id, it[1]) })
+            .combine(cohort_tsv)
+            .combine(cohort_plot)
             .map{ it -> tuple(
                 [id: it[0], sample: it[1]],
                 it[2] + [it[4]],   // htmls

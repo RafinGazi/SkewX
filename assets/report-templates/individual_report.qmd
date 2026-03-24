@@ -541,6 +541,13 @@ if (kary$flags == "none") {
 
 ## Cohort QC
 
+This section compares this individual's chrX/autosome (RX) and chrY/autosome (RY) coverage ratios against all other samples in the cohort using DBSCAN density-based clustering. Samples that cluster together with the majority of the cohort are flagged as **PASS**, while samples that fall outside the main cluster are flagged as **OUTLIER**.
+
+**What this tells you:** RX and RY together define the sex chromosome dosage signature of a sample. A typical XX female will have RX ≈ 1.0 and RY ≈ 0.0, while an XY male will have RX ≈ 0.5 and RY ≈ 0.5. Clustering across the cohort helps detect mislabelled samples, unexpected karyotypes, or sequencing anomalies — a sample flagged as OUTLIER warrants manual review.
+
+> **⚠️ Note:** DBSCAN requires a minimum number of samples to form a meaningful cluster. With fewer than ~10 samples, all samples may be flagged as OUTLIER. This does **not** indicate a problem with the sample — it simply means the cohort is too small for reliable clustering. The RX and RY values themselves remain valid.
+
+
 ```{r}
 #| label: cohort-qc
 #| echo: false
@@ -552,52 +559,43 @@ library(gt)
 
 cohort_tsv <- "ext_cohort_tsv"
 karyotype_tsv <- "ext_karyotype_tsv"
-
 cohort <- read_tsv(cohort_tsv, show_col_types = FALSE)
 kary   <- read_tsv(karyotype_tsv, show_col_types = FALSE)
-
 sample_id <- kary$individual[1]
-
-# get this sample row
 row <- cohort %>%
     filter(individual == sample_id)
-
 if (nrow(row) == 0) {
     cat("This sample was not found in cohort QC results.")
 } else {
     cat(sprintf("Sample %s compared against cohort distribution.\n\n", sample_id))
-    row %>%
-        required_cols <- c("individual", "chrX_ratio", "chrY_ratio", "karyotype", "cohort_qc_flag")
-
-        missing_cols <- setdiff(required_cols, colnames(row))
-
-        if (length(missing_cols) > 0) {
-            cat("Missing expected columns in cohort results:", paste(missing_cols, collapse=", "))
-        } else {
-
-            row %>%
-                select(all_of(required_cols)) %>%
-                gt() %>%
-                tab_header(
-                    title = md("**Cohort-level QC Check**"),
-                    subtitle = "Position of this sample relative to cohort clusters"
-                ) %>%
-                cols_label(
-                    individual       = "Individual",
-                    chrX_ratio       = "RX",
-                    chrY_ratio       = "RY",
-                    karyotype        = "Karyotype",
-                    cohort_qc_flag   = "QC Status"
-                ) %>%
-                tab_style(
-                    style = cell_fill(color = "#d4edda"),
-                    locations = cells_body(rows = cohort_qc_flag == "PASS")
-                ) %>%
-                tab_style(
-                    style = cell_fill(color = "#f8d7da"),
-                    locations = cells_body(rows = cohort_qc_flag != "PASS")
-                ) %>%
-                opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
-
+    required_cols <- c("individual", "chrX_ratio", "chrY_ratio", "karyotype", "cohort_qc_flag")
+    missing_cols <- setdiff(required_cols, colnames(row))
+    if (length(missing_cols) > 0) {
+        cat("Missing expected columns in cohort results:", paste(missing_cols, collapse=", "))
+    } else {
+        row %>%
+            select(all_of(required_cols)) %>%
+            gt() %>%
+            tab_header(
+                title = md("**Cohort-level QC Check**"),
+                subtitle = "Position of this sample relative to cohort clusters"
+            ) %>%
+            cols_label(
+                individual       = "Individual",
+                chrX_ratio       = "RX",
+                chrY_ratio       = "RY",
+                karyotype        = "Karyotype",
+                cohort_qc_flag   = "QC Status"
+            ) %>%
+            tab_style(
+                style = cell_fill(color = "#d4edda"),
+                locations = cells_body(rows = cohort_qc_flag == "PASS")
+            ) %>%
+            tab_style(
+                style = cell_fill(color = "#f8d7da"),
+                locations = cells_body(rows = cohort_qc_flag != "PASS")
+            ) %>%
+            opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
+    }
 }
 ```

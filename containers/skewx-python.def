@@ -1,0 +1,17 @@
+Bootstrap: docker
+From: quay.io/biocontainers/python:3.9--1
+
+%post
+    pip install --no-cache-dir \
+        pandas==2.3.3 \
+        numpy==2.0.2 \
+        matplotlib==3.9.4 \
+        scikit-learn==1.6.1
+
+%labels
+    Author aburafin
+    Version 1.0
+    Description SkewX Python environment for karyotype inference
+
+%test
+    python3 -c "import pandas; import numpy; import matplotlib; import sklearn; print('All packages OK')"

@@ -1,3 +1,3 @@
 individual,modbam_5mCG,sample,vcf
-GM18865,/mnt/Genomics/Lab/HEAL/X_chr/Rafin/data/GM18865_chrX_Y_18_21.bam,chrX,/mnt/Genomics/Lab/HEAL/X_chr/Rafin/data/GM18865_PMDV_FINAL.phased.vcf.gz
-GM19312,/mnt/Genomics/Lab/HEAL/X_chr/Rafin/data/GM19312_chrX_Y_18_21.bam,chrX,/mnt/Genomics/Lab/HEAL/X_chr/Rafin/data/GM19312_PMDV_FINAL.phased.vcf.gz
+GM19462,/mnt/Genomics/Lab/HEAL/X_chr/Rafin/data/GM19462_chrX_Y_18_21.bam,chrX,/mnt/Genomics/Lab/HEAL/X_chr/Rafin/data/GM19462_PMDV_FINAL.phased.vcf.gz
+HG01363,/mnt/Genomics/Lab/HEAL/X_chr/Rafin/data/HG01363_chrX_Y_18_21.bam,chrX,/mnt/Genomics/Lab/HEAL/X_chr/Rafin/data/HG01363_PMDV_FINAL.phased.vcf.gz

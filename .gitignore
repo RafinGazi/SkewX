@@ -14,3 +14,5 @@ references/
 test_haplo/
 test_phased/
 null/
+containers/*.sif
+build.log

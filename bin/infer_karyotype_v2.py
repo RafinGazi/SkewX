@@ -741,25 +741,26 @@ def main():
     result = pd.DataFrame([{
     "individual": args.individual,
     "karyotype": karyotype,
-    "karyotype_confidence": confidence,
-
+    "karyotype_conf": confidence,
+    "x_copies": int(x_copies) if not np.isnan(x_copies) else np.nan,
+    "y_copies": int(y_copies) if not np.isnan(y_copies) else np.nan,
+    "auto_mean_cov": round(autosome_cov, 3) if not np.isnan(autosome_cov) else np.nan,
+    "flags": "none",
+    "flag_confidence": "none",
+    "flag_reason": "none",
+    "flag_literature": "none",
     "n_chrX_windows": len(x_windows),
-
     "chrX_ratio": round(rx, 3) if not np.isnan(rx) else np.nan,
     "chrY_ratio": round(ry, 3) if not np.isnan(ry) else np.nan,
-
     "chrX_heterozygosity": round(hx, 3) if not np.isnan(hx) else np.nan,
     "chrX_het_level": hx_label,
     "chrX_het_sites": het_count,
     "chrX_total_sites": total_count,
-
     "consistency_status": consistency_status,
     "consistency_flags": "|".join(consistency_flags) if consistency_flags else "none",
-
     "xp_xq_ratio": round(arm_ratio, 3) if not np.isnan(arm_ratio) else np.nan,
     "xp_mean_cov": round(xp_mean, 3) if not np.isnan(xp_mean) else np.nan,
     "xq_mean_cov": round(xq_mean, 3) if not np.isnan(xq_mean) else np.nan,
-
     "chrX_mad": round(mad, 3) if not np.isnan(mad) else np.nan,
     "chrX_mad_ratio": round(mad_ratio, 3) if not np.isnan(mad_ratio) else np.nan,
     "chrX_mosaic_zscore": round(z_score, 3) if not np.isnan(z_score) else np.nan,

@@ -239,7 +239,7 @@ workflow SKEWX {
     )
 
     ch_cohort = COHORT_KARYOTYPE_QC(
-        ch_karyotype.karyotype_tsv.collect()
+        ch_karyotype.karyotype_tsv.map { meta, tsv -> tsv }.collect()
     )
 
     (ch_tmp_samples_haplotag, ch_cgibed_rep) = ch_samples_haplotag

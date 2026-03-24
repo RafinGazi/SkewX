@@ -4,7 +4,7 @@ process INFER_KARYOTYPE {
 
     publishDir "${params.outdir}/karyotype", mode: "copy"
 
-    container null   // 👈 IMPORTANT
+    container "/mnt/Genomics/Lab/HEAL/X_chr/Rafin/SkewX/containers/skewx-python.sif"
 
     input:
     tuple val(meta), path(bed_gz), path(bed_gz_csi), path(summary_txt)
@@ -15,10 +15,11 @@ process INFER_KARYOTYPE {
 
     script:
     """
-    python3 ${projectDir}/bin/infer_karyotype_v2.py \
-        ${bed_gz} \
-        ${summary_txt} \
-        ${meta.id} \
+    python3 ${projectDir}/bin/infer_karyotype_v2.py \\
+        ${bed_gz} \\
+        ${summary_txt} \\
+        ${meta.id} \\
         ${meta.id}_karyotype.tsv
+   
     """
 }
