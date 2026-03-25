@@ -24,3 +24,5 @@ karyotype_simulation/output/
 karyotype_simulation/intermediate/
 karyotype_simulation/mosdepth/
 karyotype_simulation/results/
+# Generated plots (should not be versioned)
+karyotype_simulation/scripts/*.png
