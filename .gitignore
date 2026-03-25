@@ -20,7 +20,8 @@ build.log
 # =========================
 # Karyotype simulation
 # =========================
-karyotype_simulation/output/
+karyotype_simulation/output/*
+!karyotype_simulation/output/.gitkeep
 karyotype_simulation/intermediate/
 karyotype_simulation/mosdepth/
 karyotype_simulation/results/
