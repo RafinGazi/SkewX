@@ -266,20 +266,30 @@ def detect_arm_abnormalities(xp_mean, xq_mean, arm_ratio):
 
     flags = []
 
-    if np.isnan(arm_ratio):
+    # Case 1: Xp completely missing
+    if np.isnan(xp_mean) and not np.isnan(xq_mean):
+        flags.append("Xp_deletion")
         return flags
-    
-    if not np.isnan(xp_mean) and not np.isnan(xq_mean):
 
-        # Isochromosome Xq (strong signal)
+    # Case 2: Xq completely missing
+    if np.isnan(xq_mean) and not np.isnan(xp_mean):
+        flags.append("Xq_deletion")
+        return flags
+
+    # If both missing → cannot infer
+    if np.isnan(xp_mean) and np.isnan(xq_mean):
+        return flags
+
+    # Normal imbalance detection
+    if not np.isnan(arm_ratio):
+
+        # Isochromosome Xq (very strong imbalance)
         if xp_mean < (0.25 * xq_mean):
             flags.append("iso_Xq")
 
-        # Xp deletion
         elif arm_ratio < ARM_IMBALANCE_THRESHOLD:
             flags.append("Xp_deletion")
 
-        # Xq deletion
         elif arm_ratio > (1 / ARM_IMBALANCE_THRESHOLD):
             flags.append("Xq_deletion")
 
@@ -387,7 +397,10 @@ def compute_ratios(chrX_cov, chrY_cov, autosome_cov):
         return np.nan, np.nan   
 
     rx = chrX_cov / autosome_cov
+    # Normalize RX using diploid expectation (~XX samples)
+    rx_normalized = rx / 2.0
     ry = chrY_cov / autosome_cov
+    rx = rx_normalized
 
     if np.isnan(rx) or np.isnan(ry):
         log("ERROR: Invalid RX/RY values — check input coverage")
