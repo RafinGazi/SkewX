@@ -66,8 +66,8 @@ XQ_END = PAR2[0] - 1
 ARM_IMBALANCE_THRESHOLD = 0.60
 MIN_AUTOSOME_COV = 5.0
 
-RX_ONE_COPY = 0.65
-RX_TWO_COPY = 1.35
+RX_ONE_COPY = 0.7
+RX_TWO_COPY = 1.7
 
 RY_PRESENT = 0.05
 RY_TWO_COPY = 0.75
@@ -375,8 +375,16 @@ def compute_ratios(chrX_cov, chrY_cov, autosome_cov):
     if autosome_cov <= 0 or np.isnan(autosome_cov):
         log("ERROR: Invalid autosome coverage")
         return np.nan, np.nan
-    if np.isnan(chrX_cov) or np.isnan(chrY_cov):
-        log("WARNING: Missing chrX or chrY coverage")
+
+    # Handle missing chrY (VERY IMPORTANT)
+    if np.isnan(chrY_cov):
+        log("WARNING: chrY coverage missing — assuming 0")
+        chrY_cov = 0.0
+
+    # chrX missing is still a real error
+    if np.isnan(chrX_cov):
+        log("ERROR: Missing chrX coverage")
+        return np.nan, np.nan   
 
     rx = chrX_cov / autosome_cov
     ry = chrY_cov / autosome_cov
