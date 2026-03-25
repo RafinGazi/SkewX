@@ -8,7 +8,7 @@ def log(msg):
     print(f"[report] {msg}")
 
 # =========================
-# Individual reports
+# Individual reports (unchanged)
 # =========================
 def generate_individual_reports(results_dir):
 
@@ -59,7 +59,7 @@ def generate_individual_reports(results_dir):
 
 
 # =========================
-# Cohort report
+# Cohort report (ENHANCED)
 # =========================
 def generate_cohort_report(results_dir):
 
@@ -71,6 +71,40 @@ def generate_cohort_report(results_dir):
 
     df = pd.read_csv(cohort_file, sep="\t")
 
+    # =========================
+    # Expected mapping
+    # =========================
+    expected_map = {
+        "XX": "XX",
+        "XY": "XY",
+        "XO": "XO",
+        "XXX": "XXX",
+        "XXY": "XXY",
+        "XYY": "XYY"
+    }
+
+    validation_rows = ""
+    for _, r in df.iterrows():
+
+        sample = r["individual"].replace("_sorted", "")
+        expected = expected_map.get(sample, "unknown")
+        inferred = r["karyotype"]
+
+        match = "✅" if expected == inferred else "❌"
+
+        validation_rows += f"""
+        <tr>
+            <td>{sample}</td>
+            <td>{expected}</td>
+            <td>{inferred}</td>
+            <td>{r['cohort_qc_flag']}</td>
+            <td>{match}</td>
+        </tr>
+        """
+
+    # =========================
+    # Main QC table
+    # =========================
     rows = ""
     for _, r in df.iterrows():
         rows += f"""
@@ -88,9 +122,29 @@ def generate_cohort_report(results_dir):
     <html>
     <body style="font-family: Arial; margin: 40px;">
 
-    <h1>Cohort QC Report</h1>
+    <h1>Karyotype Simulation & Validation Report</h1>
 
-    <table border="1" cellpadding="6" cellspacing="0">
+    <h2>1. Source Data</h2>
+    <table border="1" cellpadding="6">
+        <tr><th>Component</th><th>Source</th></tr>
+        <tr><td>Autosomes</td><td>GM19312 chr18 + chr21</td></tr>
+        <tr><td>chrX</td><td>GM19312 chrX</td></tr>
+        <tr><td>chrY</td><td>GM19312 chrY</td></tr>
+    </table>
+
+    <h2>2. Simulation Design</h2>
+    <table border="1" cellpadding="6">
+        <tr><th>Simulated Sample</th><th>Composition</th></tr>
+        <tr><td>XX</td><td>AUTO + X + X</td></tr>
+        <tr><td>XY</td><td>AUTO + X + Y</td></tr>
+        <tr><td>XO</td><td>AUTO + 0.5 X</td></tr>
+        <tr><td>XXX</td><td>AUTO + X + X + X</td></tr>
+        <tr><td>XXY</td><td>AUTO + X + X + Y</td></tr>
+        <tr><td>XYY</td><td>AUTO + X + Y + Y</td></tr>
+    </table>
+
+    <h2>3. Cohort QC Results</h2>
+    <table border="1" cellpadding="6">
         <tr>
             <th>Sample</th>
             <th>Karyotype</th>
@@ -100,6 +154,18 @@ def generate_cohort_report(results_dir):
             <th>Confidence</th>
         </tr>
         {rows}
+    </table>
+
+    <h2>4. Validation (Expected vs Observed)</h2>
+    <table border="1" cellpadding="6">
+        <tr>
+            <th>Sample</th>
+            <th>Expected</th>
+            <th>Inferred</th>
+            <th>QC</th>
+            <th>Match</th>
+        </tr>
+        {validation_rows}
     </table>
 
     <h2>Clustering Plot</h2>

@@ -17,18 +17,25 @@ echo "BASE=$BASE"
 echo "OUT=$OUT"
 ls -lh "$OUT"
 
-for BAM in $OUT/*_sorted.bam; do
+shopt -s nullglob
+
+for BAM in "$OUT"/*_sorted.bam; do
     NAME=$(basename "$BAM" .bam)
     echo "Processing $NAME"
 
     singularity exec -B /mnt/Genomics/Lab/HEAL/X_chr/Rafin \
-    	docker://quay.io/biocontainers/mosdepth:0.3.6--hd299d5a_0 \
-    	mosdepth -t 4 -b 1000000 "$MOS/$NAME" "$BAM"
+        docker://quay.io/biocontainers/mosdepth:0.3.6--hd299d5a_0 \
+        mosdepth -t 4 -b 1000000 "$MOS/$NAME" "$BAM"
 done
 
 echo "==== STEP 2: KARYOTYPE INFERENCE ===="
 
-for SUMMARY in $MOS/*.mosdepth.summary.txt; do
+if ! ls "$MOS"/*.mosdepth.summary.txt 1> /dev/null 2>&1; then
+    echo "ERROR: No mosdepth outputs found"
+    exit 1
+fi
+
+for SUMMARY in "$MOS"/*.mosdepth.summary.txt; do
     NAME=$(basename "$SUMMARY" .mosdepth.summary.txt)
     PREFIX="$MOS/$NAME"
 
@@ -42,7 +49,7 @@ done
 echo "==== STEP 3: COHORT QC ===="
 
 python3 /mnt/Genomics/Lab/HEAL/X_chr/Rafin/SkewX/bin/cohort_karyotype_qc.py \
-    $RES/*.tsv \
+    "$RES"/*.tsv \
     --out_prefix "$RES/cohort"
 
 echo "==== STEP 4: GENERATE HTML REPORTS ===="
