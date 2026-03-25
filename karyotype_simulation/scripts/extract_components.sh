@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATA_DIR="/mnt/Genomics/Lab/HEAL/X_chr/Rafin/data"
-OUT_DIR="/mnt/Genomics/Lab/HEAL/X_chr/Rafin/karyotype_simulation/intermediate"
+OUT_DIR="/mnt/Genomics/Lab/HEAL/X_chr/Rafin/SkewX/karyotype_simulation/intermediate"
 
 mkdir -p "$OUT_DIR"
 
