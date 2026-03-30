@@ -4,7 +4,7 @@ set -euo pipefail
 
 module load SAMtools
 
-BASE_DIR="/mnt/Genomics/Lab/HEAL/X_chr/Rafin/karyotype_simulation"
+BASE_DIR="/mnt/Genomics/Lab/HEAL/X_chr/Rafin/SkewX/karyotype_simulation"
 INT_DIR="${BASE_DIR}/intermediate"
 OUT_DIR="${BASE_DIR}/output"
 
