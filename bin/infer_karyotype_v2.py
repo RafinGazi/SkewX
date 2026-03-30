@@ -397,10 +397,7 @@ def compute_ratios(chrX_cov, chrY_cov, autosome_cov):
         return np.nan, np.nan   
 
     rx = chrX_cov / autosome_cov
-    # Normalize RX using diploid expectation (~XX samples)
-    rx_normalized = rx / 2.0
     ry = chrY_cov / autosome_cov
-    rx = rx_normalized
 
     if np.isnan(rx) or np.isnan(ry):
         log("ERROR: Invalid RX/RY values — check input coverage")
