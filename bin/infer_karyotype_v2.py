@@ -537,6 +537,25 @@ def plot_rx_ry(rx, ry, sample):
     plt.savefig(f"{sample}_rx_ry.png", dpi=150)
     plt.close()
 
+def plot_xp_xq(xp_mean, xq_mean, sample):
+
+    if np.isnan(xp_mean) or np.isnan(xq_mean):
+        return
+
+    plt.figure(figsize=(5,5))
+
+    plt.bar(
+        ["Xp", "Xq"],
+        [xp_mean, xq_mean],
+        edgecolor="black"
+    )
+
+    plt.ylabel("Coverage")
+    plt.title(f"Xp vs Xq coverage — {sample}")
+
+    plt.savefig(f"{sample}_xp_xq.png", dpi=150)
+    plt.close()
+
 # =============================================================================
 # chrX coverage profile plot
 # =============================================================================
@@ -709,6 +728,8 @@ def main():
     log(f"Xp mean: {xp_mean}")
     log(f"Xq mean: {xq_mean}")
     log(f"Xp/Xq ratio: {arm_ratio}")
+
+    plot_xp_xq(xp_mean, xq_mean, args.individual)
 
     mosaic_status = "mosaic_candidate" if mosaic_flag else "no_mosaic_signal"
 
