@@ -465,12 +465,30 @@ kary %>%
 ### Coverage ratio plot
 
 The bar chart below shows mean sequencing coverage for chr18, chr21, chrX and chrY, each normalised to the autosomal baseline (average of chr18 and chr21). Reference lines indicate expected coverage for 1 copy (0.5x), 2 copies (1.0x) and 3 copies (1.5x). The karyotype call and confidence level are shown in the plot subtitle.
+
 ```{r}
 #| label: karyotype-plot
 #| echo: false
-#| fig-cap: "Coverage ratio plot. Bars show mean coverage relative to autosomal baseline. Reference lines indicate expected copy number levels."
+#| fig-cap: "Coverage ratio plot. Bars show mean coverage relative to autosomal baseline."
 
 knitr::include_graphics("ext_karyotype_plot")
+```
+
+### Xp vs Xq arm imbalance
+
+This plot compares the mean coverage of the short (Xp) and long (Xq) arms of the X chromosome. Large deviations from balance may indicate structural abnormalities such as deletions.
+
+```{r}
+#| label: karyotype-xp-xq
+#| echo: false
+
+xp_xq_plot <- sub("\\.png$", "_xp_xq.png", "ext_karyotype_plot")
+
+if (file.exists(xp_xq_plot)) {
+    knitr::include_graphics(xp_xq_plot)
+} else {
+    cat("Xp/Xq plot not available.")
+}
 ```
 
 ### X chromosome arm analysis
@@ -505,22 +523,18 @@ kary %>%
 #| label: karyotype-flags
 #| echo: false
 
-if (kary$flags == "none") {
-    cat("No abnormality flags raised for this individual.")
+if (kary$arm_flags == "none") {
+    cat("No arm-level abnormalities detected.")
 } else {
-    flags     <- strsplit(kary$flags,           "\\|")[[1]]
-    confs     <- strsplit(kary$flag_confidence, "\\|")[[1]]
-    reasons   <- strsplit(kary$flag_reason,     " \\|\\| ")[[1]]
-    lits      <- strsplit(kary$flag_literature, " \\|\\| ")[[1]]
+    flags <- strsplit(kary$arm_flags, "\\|")[[1]]
+    confs <- strsplit(kary$arm_confidence, "\\|")[[1]]
 
     data.frame(
-        Flag        = flags,
-        Confidence  = confs,
-        Reason      = reasons,
-        Literature  = lits
+        Flag       = flags,
+        Confidence = confs
     ) %>%
         gt() %>%
-        tab_header(title = md("**X Chromosome Abnormality Flags**")) %>%
+        tab_header(title = md("**X Chromosome Arm Abnormalities**")) %>%
         tab_style(
             style = cell_fill(color = "#fff3cd"),
             locations = cells_body(rows = Confidence == "MEDIUM")
@@ -528,10 +542,6 @@ if (kary$flags == "none") {
         tab_style(
             style = cell_fill(color = "#f8d7da"),
             locations = cells_body(rows = Confidence == "HIGH")
-        ) %>%
-        tab_style(
-            style = cell_text(size = "small"),
-            locations = cells_body(columns = c(Reason, Literature))
         ) %>%
         opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
 }
