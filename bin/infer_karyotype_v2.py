@@ -593,6 +593,20 @@ def compute_confidence(rx, ry, hx, mosaic_flag):
     else:
         return "LOW"
 
+def compute_arm_confidence(xp_mean, xq_mean, arm_ratio):
+
+    if np.isnan(arm_ratio):
+        return "HIGH"  # strong deletion (one arm missing)
+
+    if arm_ratio < STRONG_THRESHOLD or arm_ratio > (1 / STRONG_THRESHOLD):
+        return "HIGH"
+
+    elif arm_ratio < WEAK_THRESHOLD or arm_ratio > (1 / WEAK_THRESHOLD):
+        return "MEDIUM"
+
+    else:
+        return "LOW"
+
 # =============================================================================
 # Cross-check consistency between signals
 # =============================================================================
@@ -704,6 +718,10 @@ def main():
 
     log(f"Arm-level flags: {arm_flags if arm_flags else 'none'}")
 
+    arm_confidence = compute_arm_confidence(xp_mean, xq_mean, arm_ratio)
+
+    log(f"Arm confidence: {arm_confidence}")
+
     # Coverage ratios
     rx, ry = compute_ratios(chrX_cov, chrY_cov, autosome_cov)
 
@@ -798,6 +816,7 @@ def main():
     "chrX_mosaic_zscore": round(z_score, 3) if not np.isnan(z_score) else np.nan,
     "mosaic_status": mosaic_status,
     "arm_flags": "|".join(arm_flags) if arm_flags else "none",
+    "arm_confidence": arm_confidence,
     "cohort_qc_flag": "pending",
 }])
 
