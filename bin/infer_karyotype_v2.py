@@ -63,7 +63,9 @@ XQ_END = PAR2[0] - 1
 # Thresholds
 # =============================================================================
 
-ARM_IMBALANCE_THRESHOLD = 0.60
+# ARM_IMBALANCE_THRESHOLD = 0.60
+STRONG_THRESHOLD = 0.60
+WEAK_THRESHOLD = 0.75
 MIN_AUTOSOME_COV = 5.0
 
 RX_ONE_COPY = 0.65
@@ -216,7 +218,12 @@ def split_chrX_arms(x_windows):
     xp_mean = np.median(xp["coverage"]) if len(xp) > 0 else np.nan
     xq_mean = np.median(xq["coverage"]) if len(xq) > 0 else np.nan
 
-    if np.isnan(xp_mean) or np.isnan(xq_mean) or xq_mean <= 0:
+    EPS = 1e-3  # small threshold for "effectively zero"
+
+    if (
+        np.isnan(xp_mean) or np.isnan(xq_mean) or
+        xp_mean < EPS or xq_mean < EPS
+    ):
         arm_ratio = np.nan
     else:
         arm_ratio = xp_mean / xq_mean
@@ -266,32 +273,39 @@ def detect_arm_abnormalities(xp_mean, xq_mean, arm_ratio):
 
     flags = []
 
-    # Case 1: Xp completely missing
-    if np.isnan(xp_mean) and not np.isnan(xq_mean):
+    EPS = 1e-3  # treat near-zero as missing
+
+    xp_missing = np.isnan(xp_mean) or xp_mean < EPS
+    xq_missing = np.isnan(xq_mean) or xq_mean < EPS
+
+    # --- HARD deletions ---
+    if xp_missing and not xq_missing:
         flags.append("Xp_deletion")
         return flags
 
-    # Case 2: Xq completely missing
-    if np.isnan(xq_mean) and not np.isnan(xp_mean):
+    if xq_missing and not xp_missing:
         flags.append("Xq_deletion")
         return flags
 
-    # If both missing → cannot infer
-    if np.isnan(xp_mean) and np.isnan(xq_mean):
+    if xp_missing and xq_missing:
         return flags
 
-    # Normal imbalance detection
+    # --- Ratio-based logic ---
     if not np.isnan(arm_ratio):
 
-        # Isochromosome Xq (very strong imbalance)
-        if xp_mean < (0.25 * xq_mean):
-            flags.append("iso_Xq")
-
-        elif arm_ratio < ARM_IMBALANCE_THRESHOLD:
+        # Strong imbalance (confident call)
+        if arm_ratio < STRONG_THRESHOLD:
             flags.append("Xp_deletion")
 
-        elif arm_ratio > (1 / ARM_IMBALANCE_THRESHOLD):
+        elif arm_ratio > (1 / STRONG_THRESHOLD):
             flags.append("Xq_deletion")
+
+        # Weak imbalance (partial / borderline)
+        elif arm_ratio < WEAK_THRESHOLD:
+            flags.append("Xp_partial_deletion")
+
+        elif arm_ratio > (1 / WEAK_THRESHOLD):
+            flags.append("Xq_partial_deletion")
 
     return flags
 
