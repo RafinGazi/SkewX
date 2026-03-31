@@ -36,11 +36,26 @@ build_and_index () {
 
     echo "Building $NAME..."
 
-    samtools merge "${OUT_DIR}/${NAME}.bam" "$@"
-    samtools sort "${OUT_DIR}/${NAME}.bam" -o "${OUT_DIR}/${NAME}_sorted.bam"
-    samtools index "${OUT_DIR}/${NAME}_sorted.bam"
+    # Merge WITHOUT sorting
+    samtools merge "${OUT_DIR}/${NAME}_sorted.bam" "$@"
 
-    rm "${OUT_DIR}/${NAME}.bam"
+    # Try indexing
+    if samtools index "${OUT_DIR}/${NAME}_sorted.bam"; then
+        echo "Index successful for $NAME (sorting not required)"
+    else
+        echo "Index failed → sorting required for $NAME"
+
+        # Fallback: sort then index
+        samtools sort "${OUT_DIR}/${NAME}_sorted.bam" -o "${OUT_DIR}/${NAME}_tmp.bam"
+        mv "${OUT_DIR}/${NAME}_tmp.bam" "${OUT_DIR}/${NAME}_sorted.bam"
+        samtools index "${OUT_DIR}/${NAME}_sorted.bam"
+    fi
+
+    # Quick integrity check
+    samtools quickcheck "${OUT_DIR}/${NAME}_sorted.bam" || {
+        echo "ERROR: BAM failed integrity check for $NAME"
+        exit 1
+    }
 
     echo "$NAME done."
 }

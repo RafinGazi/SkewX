@@ -92,6 +92,7 @@ def generate_full_report(results_dir):
         coverage_plot = img_tag(f"{results_dir}/{name}_coverage_ratios.png", width=500)
         rxry_plot     = img_tag(f"{results_dir}/{name}_rx_ry.png", width=400)
         chrx_plot     = img_tag(f"{results_dir}/{name}_chrX_coverage.png", width=700)
+        xp_xq_plot = img_tag(f"{results_dir}/{name}_xp_xq.png", width=400)
 
         per_sample_plots += f"""
         <div style="border:1px solid #ccc; padding:16px; margin-bottom:24px; border-radius:6px;">
@@ -103,6 +104,7 @@ def generate_full_report(results_dir):
             <div style="display:flex; gap:24px; flex-wrap:wrap;">
                 <div>{coverage_plot}<p style="font-size:12px;color:grey;">Coverage ratios</p></div>
                 <div>{rxry_plot}<p style="font-size:12px;color:grey;">RX vs RY</p></div>
+                <div>{xp_xq_plot}<p style="font-size:12px;color:grey;">Xp vs Xq</p></div>
             </div>
             {chrx_plot}
             <p style="font-size:12px;color:grey;">chrX coverage profile</p>

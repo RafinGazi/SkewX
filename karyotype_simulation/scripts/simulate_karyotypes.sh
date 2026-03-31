@@ -19,11 +19,18 @@ Y="${INT_DIR}/GM19312_chrY.bam"
 build_and_index () {
     NAME=$1
     shift
+
     echo "Building $NAME..."
-    samtools merge "${OUT_DIR}/${NAME}.bam" "$@"
-    samtools sort "${OUT_DIR}/${NAME}.bam" -o "${OUT_DIR}/${NAME}_sorted.bam"
-    samtools index "${OUT_DIR}/${NAME}_sorted.bam"
-    rm "${OUT_DIR}/${NAME}.bam"
+
+    # Merge WITHOUT sorting
+    samtools merge "${OUT_DIR}/${NAME}_sorted.bam" "$@"
+
+    # Minimal safety: ensure indexing works
+    samtools index "${OUT_DIR}/${NAME}_sorted.bam" || {
+        echo "ERROR: Indexing failed for $NAME"
+        exit 1
+    }
+
     echo "$NAME done."
 }
 
