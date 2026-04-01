@@ -47,11 +47,10 @@ for BAM in "$OUT"/*_sorted.bam; do
 NAME=$(basename "$BAM" .bam)
 echo "[mosdepth] Processing $NAME"
 
-```
+
 singularity exec -B "$BASE" \
     docker://quay.io/biocontainers/mosdepth:0.3.6--hd299d5a_0 \
     mosdepth -t 4 -b 1000000 "$MOS/$NAME" "$BAM"
-```
 
 done
 
@@ -74,7 +73,6 @@ for SUMMARY in "$MOS"/*.mosdepth.summary.txt; do
 NAME=$(basename "$SUMMARY" .mosdepth.summary.txt)
 PREFIX="$MOS/$NAME"
 
-```
 echo "[infer] Processing $NAME"
 
 if python3 "/mnt/Genomics/Lab/HEAL/X_chr/Rafin/SkewX/bin/infer_karyotype_v2.py" \
@@ -95,7 +93,7 @@ else
         exit 1
     fi
 fi
-```
+
 
 done
 
