@@ -77,7 +77,7 @@ PREFIX="$MOS/$NAME"
 ```
 echo "[infer] Processing $NAME"
 
-if python3 "$BASE/bin/infer_karyotype_v2.py" \
+if python3 "/mnt/Genomics/Lab/HEAL/X_chr/Rafin/SkewX/bin/infer_karyotype_v2.py" \
     "$PREFIX.regions.bed.gz" \
     "$SUMMARY" \
     "$NAME" \
