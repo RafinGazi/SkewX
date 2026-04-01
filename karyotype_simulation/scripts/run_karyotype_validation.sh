@@ -1,7 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-module load SAMtools
+# =========================
+
+# LOAD MODULES
+
+# =========================
+
+module load samtools || true
+
+# =========================
+
+# PATH SETUP
+
+# =========================
 
 BASE="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$BASE/output"
@@ -10,51 +22,90 @@ RES="$BASE/results"
 
 mkdir -p "$MOS" "$RES"
 
-echo "==== STEP 1: MOSDEPTH ===="
+echo "==== STEP 0: INPUT CHECK ===="
 echo "BASE=$BASE"
 echo "OUT=$OUT"
+
+if ! ls "$OUT"/*_sorted.bam 1> /dev/null 2>&1; then
+echo "ERROR: No BAM files found in $OUT"
+exit 1
+fi
+
 ls -lh "$OUT"
 
 shopt -s nullglob
 
+# =========================
+
+# STEP 1: MOSDEPTH
+
+# =========================
+
+echo "==== STEP 1: MOSDEPTH ===="
+
 for BAM in "$OUT"/*_sorted.bam; do
-    NAME=$(basename "$BAM" .bam)
-    echo "Processing $NAME"
-    singularity exec -B /mnt/Genomics/Lab/HEAL/X_chr/Rafin \
-        docker://quay.io/biocontainers/mosdepth:0.3.6--hd299d5a_0 \
-        mosdepth -t 4 -b 1000000 "$MOS/$NAME" "$BAM"
+NAME=$(basename "$BAM" .bam)
+echo "[mosdepth] Processing $NAME"
+
+```
+singularity exec -B "$BASE" \
+    docker://quay.io/biocontainers/mosdepth:0.3.6--hd299d5a_0 \
+    mosdepth -t 4 -b 1000000 "$MOS/$NAME" "$BAM"
+```
+
 done
+
+# =========================
+
+# STEP 2: KARYOTYPE INFERENCE
+
+# =========================
 
 echo "==== STEP 2: KARYOTYPE INFERENCE ===="
 
 if ! ls "$MOS"/*.mosdepth.summary.txt 1> /dev/null 2>&1; then
-    echo "ERROR: No mosdepth outputs found"
-    exit 1
+echo "ERROR: No mosdepth outputs found"
+exit 1
 fi
 
-# cd into results so all PNGs are saved there
 cd "$RES"
 
 for SUMMARY in "$MOS"/*.mosdepth.summary.txt; do
-    NAME=$(basename "$SUMMARY" .mosdepth.summary.txt)
-    PREFIX="$MOS/$NAME"
+NAME=$(basename "$SUMMARY" .mosdepth.summary.txt)
+PREFIX="$MOS/$NAME"
 
-    python3 /mnt/Genomics/Lab/HEAL/X_chr/Rafin/SkewX/bin/infer_karyotype_v2.py \
-        "$PREFIX.regions.bed.gz" \
-        "$SUMMARY" \
-        "$NAME" \
-        "${NAME}_karyotype.tsv"
+```
+echo "[infer] Processing $NAME"
+
+python3 "$BASE/bin/infer_karyotype_v2.py" \
+    "$PREFIX.regions.bed.gz" \
+    "$SUMMARY" \
+    "$NAME" \
+    "${NAME}_karyotype.tsv"
+
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 2 ]; then
+    echo "[INFO] $NAME skipped (non-XX karyotype — expected in validation)"
+elif [ $EXIT_CODE -ne 0 ]; then
+    echo "[ERROR] $NAME failed during karyotype inference"
+    exit 1
+fi
+```
+
 done
 
-echo "==== STEP 3: COHORT QC ===="
+# =========================
 
-python3 /mnt/Genomics/Lab/HEAL/X_chr/Rafin/SkewX/bin/cohort_karyotype_qc.py \
-    "$RES"/*.tsv \
-    --out_prefix "$RES/cohort"
+# STEP 3: GENERATE HTML REPORT
 
-echo "==== STEP 4: GENERATE HTML REPORTS ===="
+# =========================
+
+echo "==== STEP 3: GENERATE HTML REPORT ===="
 
 cd "$BASE/scripts"
 python3 report.py
 
 echo "==== ALL DONE ===="
+echo "Results directory: $RES"
+echo "Open report: $RES/report.html"
