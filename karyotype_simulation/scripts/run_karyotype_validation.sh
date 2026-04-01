@@ -7,7 +7,7 @@ set -euo pipefail
 
 # =========================
 
-module load samtools || true
+module load SAMtools || true
 
 # =========================
 
