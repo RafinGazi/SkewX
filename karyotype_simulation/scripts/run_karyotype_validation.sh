@@ -77,19 +77,23 @@ PREFIX="$MOS/$NAME"
 ```
 echo "[infer] Processing $NAME"
 
-python3 "$BASE/bin/infer_karyotype_v2.py" \
+if python3 "$BASE/bin/infer_karyotype_v2.py" \
     "$PREFIX.regions.bed.gz" \
     "$SUMMARY" \
     "$NAME" \
-    "${NAME}_karyotype.tsv"
+    "${NAME}_karyotype.tsv"; then
 
-EXIT_CODE=$?
+    echo "[INFO] $NAME passed (XX)"
 
-if [ $EXIT_CODE -eq 2 ]; then
-    echo "[INFO] $NAME skipped (non-XX karyotype — expected in validation)"
-elif [ $EXIT_CODE -ne 0 ]; then
-    echo "[ERROR] $NAME failed during karyotype inference"
-    exit 1
+else
+    EXIT_CODE=$?
+
+    if [ $EXIT_CODE -eq 2 ]; then
+        echo "[INFO] $NAME skipped (non-XX karyotype — expected in validation)"
+    else
+        echo "[ERROR] $NAME failed during karyotype inference"
+        exit 1
+    fi
 fi
 ```
 
