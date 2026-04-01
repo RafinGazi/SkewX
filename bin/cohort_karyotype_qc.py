@@ -26,6 +26,14 @@ def load_data(files):
     dfs = [pd.read_csv(f, sep="\t") for f in files]
     df = pd.concat(dfs, ignore_index=True)
     df = df.dropna(subset=["chrX_ratio", "chrY_ratio"])
+
+    # Safeguard: ensure arm columns exist if any input TSV is missing them
+    for col in ["arm_flags", "arm_confidence"]:
+        if col not in df.columns:
+            df[col] = "MISSING"
+        else:
+            df[col] = df[col].fillna("MISSING")  # handle partial missing
+
     return df
 
 
@@ -237,7 +245,9 @@ def main():
         "cluster_id",
         "cohort_qc_flag",
         "cohort_confidence",
-        "mosaic_flag"
+        "mosaic_flag",
+        "arm_flags",
+        "arm_confidence"
     ]]
 
     output.to_csv(f"{args.out_prefix}_qc.tsv", sep="\t", index=False)
