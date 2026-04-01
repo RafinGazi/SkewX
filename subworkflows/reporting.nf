@@ -14,6 +14,8 @@ workflow reporting {
         karyotype_plot          // channel containing karyotype coverage plot per individual
         cohort_tsv              // channel containing all karyotype's cohort tsv
         cohort_plot
+        skew_phased_vcf
+        skew_metrics
 
     main:
         // prepare mosdepth coverage report
@@ -33,6 +35,8 @@ workflow reporting {
             .join(clustered_reads.map{ it -> tuple(it[0].id, it[0].sample, it[1], it[2]) }.groupTuple())
             .join(karyotype_tsv.map{ it -> tuple(it[0].id, it[1]) })
             .join(karyotype_plot.map{ it -> tuple(it[0].id, it[1]) })
+            .join(skew_phased_vcf.map{ it -> tuple(it[0].id, it[1]) })
+            .join(skew_metrics.map{ it -> tuple(it[0].id, it[1])})
             .combine(cohort_tsv)
             .combine(cohort_plot)
             .map{ it -> tuple(
@@ -44,8 +48,10 @@ workflow reporting {
                 it[10],            // skew_tsv
                 it[11],            // karyotype_tsv
                 it[12],             // karyotype_plot
-                it[13],              // cohort_tsv
-                it[14]              // cohort_plot (new)
+                it[15],              // cohort_tsv
+                it[16],              // cohort_plot (new)
+                it[13],              // skew_phased_vcf
+                it[14]              // skew_metrics
             )}
             .combine(cgi_bed.map{ it -> it[1] })
             .combine(channel.fromPath("${projectDir}/assets/report-templates/individual_report.qmd", checkIfExists: true))

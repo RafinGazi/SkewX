@@ -15,7 +15,9 @@ process REPORT_INDIVIDUAL {
           path(cohort_tsv),
           path(cohort_plot),
           path(cgi_bed),
-          path(report_template)
+          path(report_template),
+          path(skew_phased_vcf),
+          path(skew_metrics)
 
     output:
     path("${meta.id}_report.qmd"), emit: qmds
@@ -26,6 +28,7 @@ process REPORT_INDIVIDUAL {
     path(skew_tsv),                emit: skew_tsv
     path(karyotype_tsv),           emit: karyotype_tsv
     path(karyotype_plot),          emit: karyotype_plot
+    path(skew_phased_vcf),         emit: skew_phased_vcf 
 
     script:
     """
@@ -50,6 +53,12 @@ process REPORT_INDIVIDUAL {
     # sub karyotype plot path into report
     sed -i "s/ext_karyotype_plot/${karyotype_plot}/g" "${meta.id}_report.qmd"
 
+    # skew phased vcf path into report
+    sed -i "s|ext_skew_phased_vcf|${skew_phased_vcf}|g" "${meta.id}_report.qmd"
+
+    # skew metrics path into report
+    sed -i "s|ext_skew_metrics|${skew_metrics}|g" "${meta.id}_report.qmd"
+    
     # sub cohort tsv path into report
     sed -i "s/ext_cohort_tsv/${cohort_tsv}/g" "${meta.id}_report.qmd"
 
@@ -88,7 +97,7 @@ process REPORT_BOOK {
         path(cgi_bed)
 
     output:
-        path("_book")
+        path("_book")  
 
     script:
     """

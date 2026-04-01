@@ -66,6 +66,7 @@ include {MOSDEPTH} from "./modules/local/mosdepth/main.nf"
 include {MOSDEPTH as MOSDEPTH_MERGED} from "./modules/local/mosdepth/main.nf"
 include {SAMTOOLS_VIEWHP} from "./modules/local/samtools/view_hp/main.nf"
 include {R_CLUSTERBYMETH} from "./modules/local/R/cluster_by_meth/main.nf"
+include { SKEW_PHASE } from "./modules/local/skew_phase/main.nf"
 include {reporting} from "./subworkflows/reporting.nf"
 include {separated_deepvariant} from "./subworkflows/local/deepvariant/main.nf"
 include { INFER_KARYOTYPE } from './modules/local/py/infer_karyotype/main'
@@ -267,6 +268,31 @@ workflow SKEWX {
 
     ch_clustered_reads = R_CLUSTERBYMETH(ch_hpreads, ch_cgibed_rep)
 
+    # skew based phasing
+    ch_skew_input = ch_clustered_reads
+    .map { meta, clustered_reads, skew_tsv ->
+        tuple(meta, skew_tsv)
+    }
+    .join(
+        ch_vcf_phased.map { meta, bam, bai, vcf, vcf_idx ->
+            tuple(meta, vcf)
+        },
+        by: 0
+    )
+    .map { meta, skew, vcf ->
+        tuple(meta, vcf, skew)
+    }
+
+    ch_skew = SKEW_PHASE(ch_skew_input)
+
+    ch_skew_phased = ch_skew.map { meta, vcf, tbi, metrics ->
+        tuple(meta, vcf)
+    }
+
+    ch_skew_metrics = ch_skew.map { meta, vcf, tbi, metrics ->
+        tuple(meta, metrics)
+    }
+
     if (params.stage != "haplotagged") {
         book = reporting(
             MOSDEPTH.out.dist,
@@ -277,7 +303,9 @@ workflow SKEWX {
             ch_karyotype.karyotype_tsv,
             ch_karyotype.karyotype_plot,
             ch_cohort.qc_tsv,
-            ch_cohort.qc_plot
+            ch_cohort.qc_plot,
+            ch_skew_phased,
+            ch_skew_metrics
         )
     }
 }

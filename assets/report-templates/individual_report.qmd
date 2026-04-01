@@ -609,3 +609,63 @@ if (nrow(row) == 0) {
     }
 }
 ```
+
+## Skew-enhanced phasing
+
+This VCF has been re-phased using X-inactivation skew information.  
+Only chrX variants within informative phase blocks are adjusted.
+
+{{< downloadthis ext_skew_phased_vcf 
+    dname="ext_meta_id_skew_phased" 
+    label="Download skew-phased VCF" >}}
+
+### Skew phasing summary
+
+Variants phased on chrX were adjusted using skew information derived from haplotype imbalance.
+
+A higher flip rate indicates stronger skew and greater confidence in skew-driven phasing.
+
+- **<10%** → weak/no skew  
+- **10–20%** → moderate skew  
+- **>20%** → strong skew (informative sample)
+
+```{r}
+#| echo: false
+
+skew_file <- "ext_skew_metrics"
+if (file.exists(skew_file)) {
+
+    skew_metrics <- read.delim(skew_file)
+
+    cat(sprintf("Flip rate: %.2f%%\n\n", skew_metrics$flip_rate))
+    skew_metrics %>%
+        gt() %>%
+        tab_header(title = md("**Skew Phasing Metrics**")) %>%
+        cols_label(
+            total_variants = "Total chrX variants",
+            flipped        = "Variants flipped",
+            kept           = "Variants kept",
+            skipped        = "Variants skipped",
+            flip_rate      = "Flip rate (%)"
+        ) %>%
+        fmt_number(columns = flip_rate, decimals = 2) %>%
+        tab_style(
+            style = cell_fill(color = "#fff3cd"),
+            locations = cells_body(
+                columns = flip_rate,
+                rows = flip_rate > 10 & flip_rate <= 20
+            )
+        ) %>%
+        tab_style(
+            style = cell_fill(color = "#d4edda"),
+            locations = cells_body(
+                columns = flip_rate,
+                rows = flip_rate > 20
+            )
+        ) %>%
+        opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
+
+} else {
+    cat("No skew phasing metrics available.")
+}
+```
