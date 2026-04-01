@@ -43,16 +43,18 @@ shopt -s nullglob
 
 echo "==== STEP 1: MOSDEPTH ===="
 
-for BAM in "$OUT"/*_sorted.bam; do
-NAME=$(basename "$BAM" .bam)
-echo "[mosdepth] Processing $NAME"
+if [ "$SKIP_MOSDEPTH" = false ]; then
+    for BAM in "$OUT"/*_sorted.bam; do
+        NAME=$(basename "$BAM" .bam)
+        echo "[mosdepth] Processing $NAME"
 
-
-singularity exec -B "$BASE" \
-    docker://quay.io/biocontainers/mosdepth:0.3.6--hd299d5a_0 \
-    mosdepth -t 4 -b 1000000 "$MOS/$NAME" "$BAM"
-
-done
+        singularity exec -B "$BASE" \
+            docker://quay.io/biocontainers/mosdepth:0.3.6--hd299d5a_0 \
+            mosdepth -t 4 -b 1000000 "$MOS/$NAME" "$BAM"
+    done
+else
+    echo "[INFO] Skipping mosdepth (using existing outputs)"
+fi
 
 # =========================
 
