@@ -1,95 +1,67 @@
 #!/usr/bin/env python3
 
 # =============================================================================
-# infer_karyotype_v2.py
+# infer_karyotype.py
 #
-# Robust karyotype inference from long-read sequencing coverage.
+# Simple karyotype inference from mosdepth coverage.
 #
-# This script improves the original infer_karyotype.R implementation by adding:
+# Logic:
+#   1. Read mosdepth summary → compute RX, RY → infer karyotype
+#   2. Load windows for all samples (needed for genome coverage plot)
+#   3. Run arm analysis for all karyotypes except XY and XYY
+#   4. If not XX → write TSV + plots, exit code 2
+#   5. If XX → write TSV + all plots, exit code 0
 #
-# - robust autosomal coverage estimation
-# - MAD outlier filtering
-# - X chromosome arm analysis (Xp vs Xq)
-# - heterozygosity analysis from VCF
-# - mosaic detection
-# - RX/RY clustering validation
-# - confidence scoring
+# Inputs:
+#   mosdepth regions bed.gz   (window coverage)
+#   mosdepth summary.txt      (per-chromosome mean coverage)
+#   sample ID
+#   output TSV path
 #
-# Inputs
-# ------
-# mosdepth window coverage
-# mosdepth summary
-# VCF file
-#
-# Outputs
-# -------
-# TSV summary
-# QC plots
-#
-# =============================================================================
-
-# =============================================================================
-# Imports
+# Outputs:
+#   TSV with karyotype call and flags
+#   PNG plots
 # =============================================================================
 
 import argparse
+import sys
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
 # =============================================================================
-# Logging helper
-# =============================================================================
-
-def log(message):
-    print(f"[infer_karyotype] {message}")
-
-
-# =============================================================================
-# CHM13v2 chrX exclusion zones
-# =============================================================================
-
-PAR1 = (0, 2394410)
-CENTROMERE = (58000000, 62000000)
-PAR2 = (153925834, 154259566)
-
-XP_START = PAR1[1] + 1
-XP_END = CENTROMERE[0] - 1
-
-XQ_START = CENTROMERE[1] + 1
-XQ_END = PAR2[0] - 1
-
-# =============================================================================
 # Thresholds
 # =============================================================================
 
-# ARM_IMBALANCE_THRESHOLD = 0.60
-STRONG_THRESHOLD = 0.60
-WEAK_THRESHOLD = 0.75
-MIN_AUTOSOME_COV = 5.0
+RX_ONE_COPY  = 0.65
+RX_TWO_COPY  = 1.35
+RY_PRESENT   = 0.05
+RY_TWO_COPY  = 0.75
 
-RX_ONE_COPY = 0.65
-RX_TWO_COPY = 1.35
+ARM_DELETION_THRESHOLD = 0.60
+ARM_PARTIAL_THRESHOLD  = 0.75
 
-RY_PRESENT = 0.05
-RY_TWO_COPY = 0.75
+# Karyotypes where arm analysis is not meaningful
+SKIP_ARM = {"XY", "XYY"}
+
+# CHM13v2 chrX arm boundaries (split Xp vs Xq only, no masking)
+XP_START =   2_394_411
+XP_END   =  57_999_999
+XQ_START =  62_000_001
+XQ_END   = 153_925_833
 
 # =============================================================================
 # Argument parsing
 # =============================================================================
 
 def parse_args():
-
     parser = argparse.ArgumentParser(
         description="Infer karyotype from mosdepth coverage"
     )
-
-    parser.add_argument("bed_gz", help="mosdepth window coverage file")
+    parser.add_argument("bed_gz",      help="mosdepth window coverage (.regions.bed.gz)")
     parser.add_argument("summary_txt", help="mosdepth summary file")
-    parser.add_argument("individual", help="sample ID")
-    parser.add_argument("output_tsv", help="output TSV")
-    parser.add_argument("--vcf", help="VCF file for heterozygosity analysis", required=False)
-
+    parser.add_argument("individual",  help="sample ID")
+    parser.add_argument("output_tsv",  help="output TSV path")
     return parser.parse_args()
 
 # =============================================================================
@@ -97,759 +69,303 @@ def parse_args():
 # =============================================================================
 
 def load_summary(summary_file):
-
     df = pd.read_csv(summary_file, sep="\t")
-
     df.columns = [c.lower() for c in df.columns]
-
     cov = dict(zip(df["chrom"], df["mean"]))
 
     chrX_cov = cov.get("chrX", np.nan)
-    chrY_cov = cov.get("chrY", np.nan)
+    chrY_cov = cov.get("chrY", 0.0)
+
+    autosome_vals = [v for k, v in cov.items() if k in ("chr18", "chr21")]
+    autosome_cov  = np.nanmean(autosome_vals) if autosome_vals else np.nan
+
     chr18_cov = cov.get("chr18", np.nan)
     chr21_cov = cov.get("chr21", np.nan)
 
-    autosome_vals = [v for v in [chr18_cov, chr21_cov] if not np.isnan(v)]
-
-    if len(autosome_vals) == 0:
-        log("ERROR: No autosomal coverage available")
-        autosome_cov = np.nan
-    elif len(autosome_vals) == 1:
-        log("WARNING: Only one autosome available for baseline")
-        autosome_cov = autosome_vals[0]
-    else:
-        autosome_cov = np.median(autosome_vals)
-
     return chrX_cov, chrY_cov, chr18_cov, chr21_cov, autosome_cov
+
+# =============================================================================
+# Compute RX / RY
+# =============================================================================
+
+def compute_ratios(chrX_cov, chrY_cov, autosome_cov):
+    rx = chrX_cov / autosome_cov
+    ry = chrY_cov / autosome_cov
+    return rx, ry
+
+# =============================================================================
+# Infer karyotype from RX / RY
+# =============================================================================
+
+def infer_karyotype(rx, ry):
+    x = 1 if rx < RX_ONE_COPY else (2 if rx < RX_TWO_COPY else 3)
+    y = 0 if ry < RY_PRESENT  else (1 if ry < RY_TWO_COPY  else 2)
+
+    mapping = {
+        (2, 0): "XX",
+        (1, 1): "XY",
+        (1, 0): "XO",
+        (2, 1): "XXY",
+        (3, 0): "XXX",
+        (1, 2): "XYY",
+        (3, 1): "XXXY",
+    }
+    return mapping.get((x, y), "unknown")
 
 # =============================================================================
 # Load window coverage
 # =============================================================================
 
-def load_windows(window_file):
-
+def load_windows(bed_gz):
     df = pd.read_csv(
-        window_file,
-        sep="\t",
-        header=None,
+        bed_gz, sep="\t", header=None,
         names=["chrom", "start", "end", "coverage"]
     )
-
     return df
 
-
 # =============================================================================
-# Robust coverage filtering using MAD
-# =============================================================================
-
-def filter_outliers(df, column="coverage"):
-
-    values = df[column].values
-
-    median = np.median(values)
-    mad = np.median(np.abs(values - median))
-
-    if mad == 0:
-        return df
-
-    mask = np.abs(values - median) < (3 * mad)
-
-    return df[mask]
-
-# =============================================================================
-# Mask problematic regions on chrX
+# Xp / Xq arm analysis — raw windows, no masking, no filtering
 # =============================================================================
 
-def mask_chrX_regions(window_df):
+def arm_analysis(windows):
+    x = windows[windows["chrom"] == "chrX"].copy()
 
-    x_windows = window_df[window_df["chrom"] == "chrX"].copy()
-
-    def is_excluded(start, end):
-
-        if start < PAR1[1] and end > PAR1[0]:
-            return True
-
-        if start < CENTROMERE[1] and end > CENTROMERE[0]:
-            return True
-
-        if start < PAR2[1] and end > PAR2[0]:
-            return True
-
-        return False
-
-    x_windows["excluded"] = x_windows.apply(
-        lambda row: is_excluded(row.start, row.end),
-        axis=1
-    )
-
-    x_windows = x_windows[~x_windows["excluded"]]
-
-    return x_windows
-
-# =============================================================================
-# Apply MAD filtering to coverage windows
-# =============================================================================
-
-def filter_chrX_windows(x_windows):
-
-    # Remove extreme coverage windows using MAD filtering
-    # Helps stabilise arm-level coverage estimates
-
-    x_windows = filter_outliers(x_windows, "coverage")
-
-    return x_windows
-
-# =============================================================================
-# Separate X chromosome arms
-# =============================================================================
-
-def split_chrX_arms(x_windows):
-
-    xp = x_windows[
-        (x_windows["start"] >= XP_START) &
-        (x_windows["end"] <= XP_END)
-    ]
-
-    xq = x_windows[
-        (x_windows["start"] >= XQ_START) &
-        (x_windows["end"] <= XQ_END)
-    ]
+    xp = x[(x["start"] >= XP_START) & (x["end"] <= XP_END)]
+    xq = x[(x["start"] >= XQ_START) & (x["end"] <= XQ_END)]
 
     xp_mean = np.median(xp["coverage"]) if len(xp) > 0 else np.nan
     xq_mean = np.median(xq["coverage"]) if len(xq) > 0 else np.nan
 
-    EPS = 1e-3  # small threshold for "effectively zero"
-
-    if (
-        np.isnan(xp_mean) or np.isnan(xq_mean) or
-        xp_mean < EPS or xq_mean < EPS
-    ):
+    if np.isnan(xp_mean) or np.isnan(xq_mean) or xq_mean == 0:
         arm_ratio = np.nan
     else:
         arm_ratio = xp_mean / xq_mean
 
-    return xp_mean, xq_mean, arm_ratio
-
-# =============================================================================
-# Mosaic detection using coverage variance
-# =============================================================================
-
-def detect_mosaicism(x_windows, autosome_windows=None):
-
-    if len(x_windows) == 0:
-        return np.nan, np.nan, False, np.nan
-
-    cov = x_windows["coverage"].values
-
-    median_cov = np.median(cov)
-    mad = np.median(np.abs(cov - median_cov))
-
-    mad_ratio = mad / median_cov if median_cov > 0 else np.nan
-
-    # Optional normalization using autosomes (better science)
-    if autosome_windows is not None and len(autosome_windows) > 0:
-        auto_cov = autosome_windows["coverage"].values
-        auto_median = np.median(auto_cov)
-        auto_mad = np.median(np.abs(auto_cov - auto_median))
-
-        if auto_median > 0:
-            auto_mad_ratio = auto_mad / auto_median
-            z_score = mad_ratio / auto_mad_ratio if auto_mad_ratio > 0 else np.nan
-        else:
-            z_score = np.nan
-    else:
-        z_score = np.nan
-
-    # Research-style threshold
-    mosaic_flag = z_score > 2.5 if not np.isnan(z_score) else mad_ratio > 0.20
-
-    return mad, mad_ratio, mosaic_flag, z_score
-
-# =============================================================================
-# Detect X chromosome structural abnormalities
-# =============================================================================
-
-def detect_arm_abnormalities(xp_mean, xq_mean, arm_ratio):
-
     flags = []
-
-    EPS = 1e-3  # treat near-zero as missing
-
-    xp_missing = np.isnan(xp_mean) or xp_mean < EPS
-    xq_missing = np.isnan(xq_mean) or xq_mean < EPS
-
-    # --- HARD deletions ---
-    if xp_missing and not xq_missing:
-        flags.append("Xp_deletion")
-        return flags
-
-    if xq_missing and not xp_missing:
-        flags.append("Xq_deletion")
-        return flags
-
-    if xp_missing and xq_missing:
-        return flags
-
-    # --- Ratio-based logic ---
     if not np.isnan(arm_ratio):
-
-        # Strong imbalance (confident call)
-        if arm_ratio < STRONG_THRESHOLD:
+        if arm_ratio < ARM_DELETION_THRESHOLD:
             flags.append("Xp_deletion")
-
-        elif arm_ratio > (1 / STRONG_THRESHOLD):
+        elif arm_ratio > (1 / ARM_DELETION_THRESHOLD):
             flags.append("Xq_deletion")
-
-        # Weak imbalance (partial / borderline)
-        elif arm_ratio < WEAK_THRESHOLD:
+        elif arm_ratio < ARM_PARTIAL_THRESHOLD:
             flags.append("Xp_partial_deletion")
-
-        elif arm_ratio > (1 / WEAK_THRESHOLD):
+        elif arm_ratio > (1 / ARM_PARTIAL_THRESHOLD):
             flags.append("Xq_partial_deletion")
 
-    return flags
+    return xp_mean, xq_mean, arm_ratio, flags
 
 # =============================================================================
-# Heterozygosity analysis from VCF
+# Plots
 # =============================================================================
 
-def compute_heterozygosity(vcf_file):
-
-    if vcf_file is None:
-        log("WARNING: No VCF provided — heterozygosity skipped")
-        return np.nan, 0, 0
-
-    het_count = 0
-    total_count = 0
-
-    with open(vcf_file, "r") as f:
-        for line in f:
-
-            # Skip headers
-            if line.startswith("#"):
-                continue
-
-            fields = line.strip().split("\t")
-
-            chrom = fields[0]
-
-            # Only chrX
-            if chrom not in ["chrX", "X"]:
-                continue
-            
-            if len(fields) < 10:
-                continue
-
-            format_fields = fields[8].split(":")
-            sample_fields = fields[9].split(":")
-
-            if len(format_fields) != len(sample_fields):
-                continue
-
-            format_dict = dict(zip(format_fields, sample_fields))
-
-            genotype = format_dict.get("GT", "./.")
-            depth_val = format_dict.get("DP", "0")
-
-            try:
-                depth = int(depth_val)
-            except:
-                depth = 0
-
-            # Skip missing genotype
-            if genotype in ["./.", ".|."]:
-                continue
-
-            # Skip low-quality variants
-            if depth < 10:
-                continue
-
-            # Accept both unphased and phased genotypes
-            valid_genotypes = ["0/0", "0/1", "1/0", "1/1", "0|1", "1|0"]
-            het_genotypes = {"0/1","1/0","0|1","1|0"}
-
-            if genotype in valid_genotypes:
-                total_count += 1
-
-                if genotype in het_genotypes:
-                    het_count += 1  
-
-    hx = het_count / total_count if total_count > 0 else np.nan
-
-    return hx, het_count, total_count
-
-def interpret_heterozygosity(hx):
-
-    if np.isnan(hx):
-        return "unknown"
-
-    if hx < 0.05:
-        return "low"
-    elif hx < 0.25:
-        return "moderate"
-    else:
-        return "high"
-
-# =============================================================================
-# Coverage ratio calculations
-# =============================================================================
-
-def compute_ratios(chrX_cov, chrY_cov, autosome_cov):
-
-    if autosome_cov <= 0 or np.isnan(autosome_cov):
-        log("ERROR: Invalid autosome coverage")
-        return np.nan, np.nan
-
-    # Handle missing chrY (VERY IMPORTANT)
-    if np.isnan(chrY_cov):
-        log("WARNING: chrY coverage missing — assuming 0")
-        chrY_cov = 0.0
-
-    # chrX missing is still a real error
-    if np.isnan(chrX_cov):
-        log("ERROR: Missing chrX coverage")
-        return np.nan, np.nan   
-
-    rx = chrX_cov / autosome_cov
-    ry = chrY_cov / autosome_cov
-
-    if np.isnan(rx) or np.isnan(ry):
-        log("ERROR: Invalid RX/RY values — check input coverage")
-
-    return rx, ry
-
-# =============================================================================
-# Infer chromosome copy numbers
-# =============================================================================
-
-def infer_copy_numbers(rx, ry):
-
-    # Infer X copies
-    if rx < RX_ONE_COPY:
-        x_copies = 1
-    elif rx < RX_TWO_COPY:
-        x_copies = 2
-    else:
-        x_copies = 3
-
-    # Infer Y copies
-    if ry < RY_PRESENT:
-        y_copies = 0
-    elif ry < RY_TWO_COPY:
-        y_copies = 1
-    else:
-        y_copies = 2
-
-    return x_copies, y_copies
-
-
-# =============================================================================
-# Convert copy numbers to karyotype label
-# =============================================================================
-
-def determine_karyotype(x_copies, y_copies):
-
-    mapping = {
-        (2,0): "XX",
-        (1,1): "XY",
-        (1,0): "XO",
-        (2,1): "XXY",
-        (3,0): "XXX",
-        (1,2): "XYY",
-        (3,1): "XXXY"
-    }
-
-    return mapping.get((x_copies, y_copies), "unknown")
-
-# =============================================================================
-# Coverage ratio plot
-# =============================================================================
-
-def plot_coverage_ratios(chr18_cov, chr21_cov, chrX_cov, chrY_cov, autosome_cov, sample):
-
-    if autosome_cov <= 0 or np.isnan(autosome_cov):
-        log("WARNING: Skipping coverage ratio plot due to invalid autosome coverage")
-        return
-
+def plot_coverage_ratios(chr18_cov, chr21_cov, chrX_cov, chrY_cov,
+                         autosome_cov, sample):
+    labels = ["chr18", "chr21", "chrX", "chrY"]
     ratios = [
         chr18_cov / autosome_cov,
         chr21_cov / autosome_cov,
-        chrX_cov / autosome_cov,
-        chrY_cov / autosome_cov
+        chrX_cov  / autosome_cov,
+        chrY_cov  / autosome_cov,
     ]
-
-    labels = ["chr18", "chr21", "chrX", "chrY"]
-
-    # Autosomes = blue, sex chromosomes = orange
     colors = ["#8FBCDB", "#8FBCDB", "#E07B5A", "#E07B5A"]
 
-    plt.figure(figsize=(7,5))
-
+    plt.figure(figsize=(7, 5))
     plt.bar(labels, ratios, color=colors, edgecolor="black")
-
-    # Expected copy-number reference lines
-    plt.axhline(0.5, linestyle="dotted", color="grey", label="1 copy")
-    plt.axhline(1.0, linestyle="dashed", color="grey", label="2 copies")
-    plt.axhline(1.5, linestyle="dotted", color="grey", label="3 copies")
-
-    plt.ylabel("Coverage ratio (relative to autosomes)")
+    plt.axhline(0.5, linestyle="dotted", color="grey", label="1 copy (0.5)")
+    plt.axhline(1.0, linestyle="dashed", color="grey", label="2 copies (1.0)")
+    plt.axhline(1.5, linestyle="dotted", color="grey", label="3 copies (1.5)")
+    plt.ylabel("Coverage ratio (relative to autosome mean)")
     plt.title(f"Coverage ratios — {sample}")
-
-    valid_ratios = [r for r in ratios if not np.isnan(r)]
-
-    if len(valid_ratios) == 0:
-        log("WARNING: No valid ratios for plotting")
-        return
-    plt.ylim(0, max(valid_ratios) + 0.4)
-
-    plt.legend()    
-
+    plt.ylim(0, max([r for r in ratios if not np.isnan(r)]) + 0.4)
+    plt.legend()
+    plt.tight_layout()
     plt.savefig(f"{sample}_coverage_ratios.png", dpi=150)
     plt.close()
 
-# =============================================================================
-# RX vs RY plot
-# =============================================================================
 
-def plot_rx_ry(rx, ry, sample):
+def plot_genome_coverage(windows, autosome_cov, sample):
+    """
+    4-panel subplot: chr18, chr21, chrX, chrY window coverage.
+    Same y-axis scale across all panels for direct comparison.
+    Both axes start at 0. Autosome mean and half-autosome reference
+    lines on each panel.
+    """
+    chroms = ["chr18", "chr21", "chrX", "chrY"]
+    colors = ["#8FBCDB", "#8FBCDB", "#E07B5A", "#E07B5A"]
 
-    plt.figure(figsize=(5,5))
+    all_cov = windows[windows["chrom"].isin(chroms)]["coverage"]
+    y_max = all_cov.max() * 1.15 if len(all_cov) > 0 else autosome_cov * 2
 
-    plt.scatter(rx, ry, color="red", s=80)
+    fig, axes = plt.subplots(1, 4, figsize=(18, 4), sharey=True)
+    fig.suptitle(f"Genome coverage profile — {sample}", fontsize=13)
 
-    plt.xlabel("RX (X coverage / autosome coverage)")
-    plt.ylabel("RY (Y coverage / autosome coverage)")
+    for ax, chrom, color in zip(axes, chroms, colors):
+        sub = windows[windows["chrom"] == chrom]
 
-    plt.title(f"RX vs RY — {sample}")
+        if len(sub) > 0:
+            ax.scatter(
+                sub["start"] / 1e6,
+                sub["coverage"],
+                s=15, alpha=0.7, color=color
+            )
+        else:
+            ax.text(0.5, 0.5, "no data", ha="center", va="center",
+                    transform=ax.transAxes, color="grey")
 
-    plt.axvline(0.5, linestyle="dotted", color="grey")
-    plt.axvline(1.0, linestyle="dotted", color="grey")
+        ax.axhline(autosome_cov, linestyle="dashed", color="orange",
+                   linewidth=1.2, label=f"Autosome mean ({autosome_cov:.1f}x)")
+        ax.axhline(autosome_cov / 2, linestyle="dotted", color="grey",
+                   linewidth=1.0, label=f"Half autosome ({autosome_cov/2:.1f}x)")
 
-    plt.axhline(0.5, linestyle="dotted", color="grey")
+        ax.set_title(chrom)
+        ax.set_xlabel("Position (Mb)")
+        ax.set_xlim(0, None)
+        ax.set_ylim(0, y_max)
 
-    plt.xlim(0, 2)
-    plt.ylim(0, 2)
+    axes[0].set_ylabel("Coverage")
+    axes[0].legend(fontsize=7)
 
-    plt.text(1.0, 0.05, "XX", fontsize=10)
-    plt.text(0.5, 0.5, "XY", fontsize=10)
-    plt.text(0.5, 0.05, "XO", fontsize=10)
-
-    plt.savefig(f"{sample}_rx_ry.png", dpi=150)
+    plt.tight_layout()
+    plt.savefig(f"{sample}_genome_coverage.png", dpi=150)
     plt.close()
 
-def plot_xp_xq(xp_mean, xq_mean, sample):
 
+def plot_xp_xq(xp_mean, xq_mean, autosome_cov, sample):
     if np.isnan(xp_mean) or np.isnan(xq_mean):
         return
 
-    plt.figure(figsize=(5,5))
-
-    plt.bar(
-        ["Xp", "Xq"],
-        [xp_mean, xq_mean],
-        edgecolor="black"
-    )
-
-    plt.ylabel("Coverage")
-    plt.title(f"Xp vs Xq coverage — {sample}")
-
+    plt.figure(figsize=(5, 5))
+    plt.bar(["Xp", "Xq"], [xp_mean, xq_mean],
+            color=["#6BAED6", "#2171B5"], edgecolor="black")
+    plt.axhline(autosome_cov, linestyle="dashed", color="orange",
+                linewidth=1.5, label=f"Autosome mean ({autosome_cov:.1f}x)")
+    plt.axhline(autosome_cov / 2, linestyle="dotted", color="grey",
+                linewidth=1.2, label=f"Half autosome ({autosome_cov/2:.1f}x)")
+    plt.ylabel("Median coverage")
+    plt.title(f"Xp vs Xq arm coverage — {sample}")
+    plt.legend(fontsize=9)
+    plt.tight_layout()
     plt.savefig(f"{sample}_xp_xq.png", dpi=150)
     plt.close()
 
-# =============================================================================
-# chrX coverage profile plot
-# =============================================================================
 
-def plot_chrX_coverage(x_windows, sample):
-
-    if len(x_windows) == 0:
-        log("WARNING: No chrX windows — skipping coverage plot")
-        return
-
-    plt.figure(figsize=(10,4))
-
-    plt.scatter(
-        x_windows["start"],
-        x_windows["coverage"],
-        s=10,
-        alpha=0.7
-    )
-
-    plt.xlabel("Genomic position on chrX")
-    plt.ylabel("Coverage")
-
-    plt.title(f"chrX coverage profile — {sample}")
-
-    plt.savefig(f"{sample}_chrX_coverage.png", dpi=150)
+def plot_rx_ry(rx, ry, sample):
+    plt.figure(figsize=(5, 5))
+    plt.scatter(rx, ry, color="red", s=100, zorder=5)
+    plt.axvline(0.5, linestyle="dotted", color="grey")
+    plt.axvline(1.0, linestyle="dotted", color="grey")
+    plt.axhline(0.5, linestyle="dotted", color="grey")
+    for (label, x_pos, y_pos) in [
+        ("XX",  1.0, 0.02),
+        ("XY",  0.5, 0.5),
+        ("XO",  0.5, 0.02),
+        ("XXY", 1.0, 0.5),
+        ("XXX", 1.5, 0.02),
+        ("XYY", 0.5, 1.0),
+    ]:
+        plt.text(x_pos, y_pos, label, fontsize=9, color="dimgrey")
+    plt.xlabel("RX (chrX / autosome)")
+    plt.ylabel("RY (chrY / autosome)")
+    plt.title(f"RX vs RY — {sample}")
+    plt.xlim(0, 2)
+    plt.ylim(0, 2)
+    plt.tight_layout()
+    plt.savefig(f"{sample}_rx_ry.png", dpi=150)
     plt.close()
 
 # =============================================================================
-# Confidence scoring
-# =============================================================================
-def compute_confidence(rx, ry, hx, mosaic_flag):
-
-    if np.isnan(rx) or np.isnan(ry):
-        return "LOW"
-
-    score = 0
-
-    # Coverage confidence
-    if not np.isnan(rx) and not np.isnan(ry):
-        score += 1
-
-    # Heterozygosity support
-    if not np.isnan(hx):
-        score += 1
-
-    # Penalize mosaic
-    if mosaic_flag:
-        score -= 1
-
-    if score >= 2:
-        return "HIGH"
-    elif score == 1:
-        return "MEDIUM"
-    else:
-        return "LOW"
-
-def compute_arm_confidence(xp_mean, xq_mean, arm_ratio):
-
-    if np.isnan(arm_ratio):
-        return "HIGH"  # strong deletion (one arm missing)
-
-    if arm_ratio < STRONG_THRESHOLD or arm_ratio > (1 / STRONG_THRESHOLD):
-        return "HIGH"
-
-    elif arm_ratio < WEAK_THRESHOLD or arm_ratio > (1 / WEAK_THRESHOLD):
-        return "MEDIUM"
-
-    else:
-        return "LOW"
-
-# =============================================================================
-# Cross-check consistency between signals
+# Write output TSV
 # =============================================================================
 
-def check_consistency(karyotype, hx, mosaic_flag):
-
-    flags = []
-
-    # Expected heterozygosity patterns
-    if karyotype == "XX" and not np.isnan(hx):
-        if hx < 0.08:
-            flags.append("low_het_for_XX")
-
-    elif karyotype in ["XY", "XO"]:
-        if hx > 0.1:
-            flags.append("unexpected_heterozygosity")
-
-    elif karyotype in ["XXY", "XXX"]:
-        if hx < 0.1:
-            flags.append("low_het_for_extra_X")
-
-    # Mosaic override
-    if mosaic_flag:
-        flags.append("mosaic_sample")
-
-    status = "consistent" if len(flags) == 0 else "inconsistent"
-
-    return status, flags
+def write_output(path, individual, karyotype, rx, ry,
+                 xp_mean, xq_mean, arm_ratio, arm_flags,
+                 autosome_cov, qc_flag):
+    row = {
+        "individual":    individual,
+        "karyotype":     karyotype,
+        "chrX_ratio":    round(rx, 3)        if not np.isnan(rx)        else np.nan,
+        "chrY_ratio":    round(ry, 3)        if not np.isnan(ry)        else np.nan,
+        "auto_mean_cov": round(autosome_cov, 3),
+        "xp_mean_cov":   round(xp_mean, 3)   if not np.isnan(xp_mean)   else np.nan,
+        "xq_mean_cov":   round(xq_mean, 3)   if not np.isnan(xq_mean)   else np.nan,
+        "xp_xq_ratio":   round(arm_ratio, 3) if not np.isnan(arm_ratio) else np.nan,
+        "arm_flags":     "|".join(arm_flags) if arm_flags else "none",
+        "qc_flag":       qc_flag,
+    }
+    pd.DataFrame([row]).to_csv(path, sep="\t", index=False)
 
 # =============================================================================
-# Main execution
+# Main
 # =============================================================================
 
 def main():
-
     args = parse_args()
+    sample = args.individual
 
-    log(f"Sample: {args.individual}")
+    print(f"[infer_karyotype] Sample: {sample}")
 
-    # Load mosdepth summary
-    log("Loading mosdepth summary")
+    # STEP 1: Load summary and compute ratios
     chrX_cov, chrY_cov, chr18_cov, chr21_cov, autosome_cov = load_summary(args.summary_txt)
 
-    log(f"chrX coverage: {chrX_cov}")
-    log(f"chrY coverage: {chrY_cov}")
-    log(f"autosome baseline: {autosome_cov}")
+    if np.isnan(autosome_cov) or autosome_cov == 0:
+        print(f"[infer_karyotype] ERROR: Cannot compute autosome baseline — check summary file")
+        sys.exit(1)
 
-    if np.isnan(autosome_cov):
-        log("ERROR: Autosome coverage is NaN — writing fallback output")
+    print(f"[infer_karyotype] chrX={chrX_cov:.2f}x  chrY={chrY_cov:.2f}x  autosome={autosome_cov:.2f}x")
 
-        result = pd.DataFrame([{
-            "individual": args.individual,
-            "karyotype": "unknown",
-            "karyotype_confidence": "LOW",
-            "chrX_ratio": np.nan,
-            "chrY_ratio": np.nan,
-            "cohort_qc_flag": "pending",
-            "consistency_status": "unknown",
-            "consistency_flags": "autosome_missing"
-        }])
+    rx, ry = compute_ratios(chrX_cov, chrY_cov, autosome_cov)
+    karyotype = infer_karyotype(rx, ry)
 
-        result.to_csv(args.output_tsv, sep="\t", index=False)
-        return
+    print(f"[infer_karyotype] RX={rx:.3f}  RY={ry:.3f}  → {karyotype}")
 
-    elif autosome_cov < MIN_AUTOSOME_COV:
-        log("WARNING: Low autosomal coverage — results may be unreliable")
-
-    # Load window coverage
-    log("Loading window coverage")
+    # STEP 2: Load windows for all samples
+    print(f"[infer_karyotype] Loading windows")
     windows = load_windows(args.bed_gz)
 
-    # Process chrX windows
-    log("Masking PAR and centromere regions")
-    x_windows = mask_chrX_regions(windows)
-
-    log("Applying MAD filtering")
-    x_windows = filter_chrX_windows(x_windows)
-    if len(x_windows) < 50:
-        log("WARNING: Very few chrX windows — results may be unstable")
-
-    log("Generating chrX coverage profile plot")
-    plot_chrX_coverage(x_windows, args.individual)
-
-    log("Computing Xp/Xq arm coverage")
-    xp_mean, xq_mean, arm_ratio = split_chrX_arms(x_windows)
-
-    log("Detecting mosaicism from coverage variance")
-
-    autosome_windows = windows[windows["chrom"].isin(["chr18", "chr21"])]
-    if len(autosome_windows) == 0:
-        log("WARNING: No autosomal windows available for mosaic normalization")
-    autosome_windows = filter_outliers(autosome_windows, "coverage")
-    mad, mad_ratio, mosaic_flag, z_score = detect_mosaicism(x_windows, autosome_windows)
-
-    log(f"chrX MAD: {mad}")
-    log(f"MAD/coverage ratio: {mad_ratio}")
-    log(f"Mosaic flag: {mosaic_flag}")
-    log(f"Mosaic z-score: {z_score}")
-
-    log(f"Xp mean: {xp_mean}")
-    log(f"Xq mean: {xq_mean}")
-    log(f"Xp/Xq ratio: {arm_ratio}")
-
-    plot_xp_xq(xp_mean, xq_mean, args.individual)
-
-    mosaic_status = "mosaic_candidate" if mosaic_flag else "no_mosaic_signal"
-
-    log("Detecting arm-level abnormalities")
-
-    arm_flags = detect_arm_abnormalities(xp_mean, xq_mean, arm_ratio)
-
-    log(f"Arm-level flags: {arm_flags if arm_flags else 'none'}")
-
-    arm_confidence = compute_arm_confidence(xp_mean, xq_mean, arm_ratio)
-
-    log(f"Arm confidence: {arm_confidence}")
-
-    # Coverage ratios
-    rx, ry = compute_ratios(chrX_cov, chrY_cov, autosome_cov)
-
-    log(f"RX: {rx}")
-    log(f"RY: {ry}")
-
-    if not np.isnan(rx) and not np.isnan(ry):
-        if rx > 2 or ry > 2:
-            log("WARNING: Extreme RX/RY values — possible coverage issue")
-
-    log(f"[QC] RX/RY ready for cohort comparison")
-
-    # Infer copy numbers
-    if np.isnan(rx) or np.isnan(ry):
-        log("ERROR: Cannot infer karyotype due to invalid ratios")
-        karyotype = "unknown"
-        x_copies, y_copies = np.nan, np.nan
+    # STEP 3: Arm analysis — skip only for XY and XYY
+    if karyotype not in SKIP_ARM:
+        print(f"[infer_karyotype] Running Xp/Xq arm analysis")
+        xp_mean, xq_mean, arm_ratio, arm_flags = arm_analysis(windows)
+        print(f"[infer_karyotype] Xp={xp_mean:.2f}x  Xq={xq_mean:.2f}x  ratio={arm_ratio:.3f}")
+        if arm_flags:
+            print(f"[infer_karyotype] Arm flags: {arm_flags}")
     else:
-        x_copies, y_copies = infer_copy_numbers(rx, ry)
-        # Determine karyotype
-        karyotype = determine_karyotype(x_copies, y_copies)
+        print(f"[infer_karyotype] Skipping arm analysis — not meaningful for {karyotype}")
+        xp_mean, xq_mean, arm_ratio, arm_flags = np.nan, np.nan, np.nan, []
 
-    log(f"Inferred X copies: {x_copies}")
-    log(f"Inferred Y copies: {y_copies}")
-    log(f"Inferred karyotype: {karyotype}")
+    # STEP 4: Determine QC flag
+    if karyotype != "XX":
+        qc_flag = f"skipped:{karyotype}"
+    elif arm_flags:
+        qc_flag = f"flagged:{','.join(arm_flags)}"
+    else:
+        qc_flag = "pass"
 
-    log("Computing chrX heterozygosity")
+    print(f"[infer_karyotype] QC flag: {qc_flag}")
 
-    hx, het_count, total_count = compute_heterozygosity(args.vcf)
-    hx_label = interpret_heterozygosity(hx)
-
-    log(f"HX (heterozygosity): {hx}")
-    log(f"Heterozygous variants: {het_count}")
-    log(f"Total variants: {total_count}")
-
-    confidence = compute_confidence(rx, ry, hx, mosaic_flag)
-    log(f"Karyotype confidence: {confidence}")
-
-    log("Performing cross-signal consistency check")
-
-    consistency_status, consistency_flags = check_consistency(
-        karyotype,
-        hx,
-        mosaic_flag
+    # STEP 5: Write TSV
+    write_output(
+        args.output_tsv, sample, karyotype, rx, ry,
+        xp_mean, xq_mean, arm_ratio, arm_flags,
+        autosome_cov, qc_flag
     )
 
-    log(f"Consistency: {consistency_status}")
-    log(f"Consistency flags: {consistency_flags if consistency_flags else 'none'}")
+    # STEP 6: Plots — all samples get these
+    plot_coverage_ratios(chr18_cov, chr21_cov, chrX_cov, chrY_cov, autosome_cov, sample)
+    plot_genome_coverage(windows, autosome_cov, sample)
+    plot_rx_ry(rx, ry, sample)
 
-    log("Generating coverage ratio plot")
+    # Xp/Xq plot only if arm analysis was run
+    if karyotype not in SKIP_ARM:
+        plot_xp_xq(xp_mean, xq_mean, autosome_cov, sample)
 
-    plot_coverage_ratios(
-        chr18_cov,
-        chr21_cov,
-        chrX_cov,
-        chrY_cov,
-        autosome_cov,
-        args.individual
-    )
+    # STEP 7: Exit
+    if karyotype != "XX":
+        print(f"[infer_karyotype] FLAGGED: {sample} is {karyotype} — not XX, skipping pipeline")
+        sys.exit(2)
 
-    if not np.isnan(rx) and not np.isnan(ry):
-        plot_rx_ry(rx, ry, args.individual)
-    else:
-        log("Skipping RX/RY plot due to invalid values")
-
-    # Save result
-    result = pd.DataFrame([{
-    "individual": args.individual,
-    "karyotype": karyotype,
-    "karyotype_conf": confidence,
-    "x_copies": int(x_copies) if not np.isnan(x_copies) else np.nan,
-    "y_copies": int(y_copies) if not np.isnan(y_copies) else np.nan,
-    "auto_mean_cov": round(autosome_cov, 3) if not np.isnan(autosome_cov) else np.nan,
-    "flags": "none",
-    "flag_confidence": "none",
-    "flag_reason": "none",
-    "flag_literature": "none",
-    "n_chrX_windows": len(x_windows),
-    "chrX_ratio": round(rx, 3) if not np.isnan(rx) else np.nan,
-    "chrY_ratio": round(ry, 3) if not np.isnan(ry) else np.nan,
-    "chrX_heterozygosity": round(hx, 3) if not np.isnan(hx) else np.nan,
-    "chrX_het_level": hx_label,
-    "chrX_het_sites": het_count,
-    "chrX_total_sites": total_count,
-    "consistency_status": consistency_status,
-    "consistency_flags": "|".join(consistency_flags) if consistency_flags else "none",
-    "xp_xq_ratio": round(arm_ratio, 3) if not np.isnan(arm_ratio) else np.nan,
-    "xp_mean_cov": round(xp_mean, 3) if not np.isnan(xp_mean) else np.nan,
-    "xq_mean_cov": round(xq_mean, 3) if not np.isnan(xq_mean) else np.nan,
-    "chrX_mad": round(mad, 3) if not np.isnan(mad) else np.nan,
-    "chrX_mad_ratio": round(mad_ratio, 3) if not np.isnan(mad_ratio) else np.nan,
-    "chrX_mosaic_zscore": round(z_score, 3) if not np.isnan(z_score) else np.nan,
-    "mosaic_status": mosaic_status,
-    "arm_flags": "|".join(arm_flags) if arm_flags else "none",
-    "arm_confidence": arm_confidence,
-    "cohort_qc_flag": "pending",
-}])
-
-    log("Writing output TSV")
-    result.to_csv(args.output_tsv, sep="\t", index=False)
-
-    log("Karyotype inference complete — awaiting cohort QC")
-    log("Done")
-
-    
+    print(f"[infer_karyotype] Done → {args.output_tsv}")
 
 
 if __name__ == "__main__":
     main()
-
