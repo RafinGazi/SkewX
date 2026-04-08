@@ -367,18 +367,20 @@ def main():
 
     if arm_flags:
         qc_flag = f"flagged:{','.join(arm_flags)}"
-    elif raw_karyotype == "XX":
+    elif karyotype in ["XX", "XXX", "XXY"]:
         qc_flag = "pass"
     else:
-        qc_flag = f"skipped:{raw_karyotype}"
+        qc_flag = f"skipped:{karyotype}"
 
     print(f"[infer_karyotype] QC flag: {qc_flag}")
 
     # Derive high-level status
-    if qc_flag == "pass":
-        status = "pass"
-    elif qc_flag.startswith("flagged"):
-        status = "flagged"
+    if karyotype == "XX":
+        status = "diploid-pass"
+    elif karyotype in ["XXX", "XXY"]:
+        status = "non-diploid-pass"
+    elif arm_flags:
+        status = "structural-flagged"
     else:
         status = "skipped"
 
