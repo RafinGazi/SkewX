@@ -9,6 +9,7 @@
 #   1. Read mosdepth summary → compute RX, RY → infer karyotype
 #   2. Load windows for all samples (needed for genome coverage plot)
 #   3. Run arm analysis for all karyotypes except XY and XYY
+#   3b. Rescue XO → XX if arm flags detected (structural deletion, not monosomy)
 #   4. If not XX → write TSV + plots, exit code 2
 #   5. If XX → write TSV + all plots, exit code 0
 #
@@ -124,10 +125,15 @@ def load_windows(bed_gz):
     return df
 
 # =============================================================================
-# Xp / Xq arm analysis — raw windows, no masking, no filtering
+# Xp / Xq arm analysis
+#
+# Uses absolute coverage thresholds (relative to autosome_cov) to detect
+# full arm deletions where one arm is near zero — these break ratio-based
+# detection because the denominator collapses. Ratio-based logic is kept
+# as a fallback for partial deletions.
 # =============================================================================
 
-def arm_analysis(windows):
+def arm_analysis(windows, autosome_cov):
     x = windows[windows["chrom"] == "chrX"].copy()
 
     xp = x[(x["start"] >= XP_START) & (x["end"] <= XP_END)]
@@ -142,7 +148,23 @@ def arm_analysis(windows):
         arm_ratio = xp_mean / xq_mean
 
     flags = []
-    if not np.isnan(arm_ratio):
+    arm_threshold = autosome_cov * ARM_DELETION_THRESHOLD
+
+    # Absolute coverage check first — catches full arm deletions
+    # where the ratio is undefined or misleading
+    xp_absent = np.isnan(xp_mean) or (xp_mean < arm_threshold)
+    xq_absent = np.isnan(xq_mean) or (xq_mean < arm_threshold)
+
+    if xp_absent and not xq_absent:
+        flags.append("Xp_deletion")
+    elif xq_absent and not xp_absent:
+        flags.append("Xq_deletion")
+    elif xp_absent and xq_absent:
+        # Both arms low — ambiguous, flag both
+        flags.append("Xp_deletion")
+        flags.append("Xq_deletion")
+    elif not np.isnan(arm_ratio):
+        # Ratio-based detection for partial deletions
         if arm_ratio < ARM_DELETION_THRESHOLD:
             flags.append("Xp_deletion")
         elif arm_ratio > (1 / ARM_DELETION_THRESHOLD):
@@ -184,12 +206,6 @@ def plot_coverage_ratios(chr18_cov, chr21_cov, chrX_cov, chrY_cov,
 
 
 def plot_genome_coverage(windows, autosome_cov, sample):
-    """
-    4-panel subplot: chr18, chr21, chrX, chrY window coverage.
-    Same y-axis scale across all panels for direct comparison.
-    Both axes start at 0. Autosome mean and half-autosome reference
-    lines on each panel.
-    """
     chroms = ["chr18", "chr21", "chrX", "chrY"]
     colors = ["#8FBCDB", "#8FBCDB", "#E07B5A", "#E07B5A"]
 
@@ -277,20 +293,22 @@ def plot_rx_ry(rx, ry, sample):
 # Write output TSV
 # =============================================================================
 
-def write_output(path, individual, karyotype, rx, ry,
+def write_output(path, individual, raw_karyotype, karyotype, status, rx, ry,
                  xp_mean, xq_mean, arm_ratio, arm_flags,
                  autosome_cov, qc_flag):
     row = {
-        "individual":    individual,
-        "karyotype":     karyotype,
-        "chrX_ratio":    round(rx, 3)        if not np.isnan(rx)        else np.nan,
-        "chrY_ratio":    round(ry, 3)        if not np.isnan(ry)        else np.nan,
-        "auto_mean_cov": round(autosome_cov, 3),
-        "xp_mean_cov":   round(xp_mean, 3)   if not np.isnan(xp_mean)   else np.nan,
-        "xq_mean_cov":   round(xq_mean, 3)   if not np.isnan(xq_mean)   else np.nan,
-        "xp_xq_ratio":   round(arm_ratio, 3) if not np.isnan(arm_ratio) else np.nan,
-        "arm_flags":     "|".join(arm_flags) if arm_flags else "none",
-        "qc_flag":       qc_flag,
+        "individual":      individual,
+        "raw_karyotype":   raw_karyotype,   # original call before rescue
+        "karyotype":       karyotype,        # final call after rescue
+        "status":          status,
+        "chrX_ratio":      round(rx, 3)        if not np.isnan(rx)        else np.nan,
+        "chrY_ratio":      round(ry, 3)        if not np.isnan(ry)        else np.nan,
+        "auto_mean_cov":   round(autosome_cov, 3),
+        "xp_mean_cov":     round(xp_mean, 3)   if not np.isnan(xp_mean)   else np.nan,
+        "xq_mean_cov":     round(xq_mean, 3)   if not np.isnan(xq_mean)   else np.nan,
+        "xp_xq_ratio":     round(arm_ratio, 3) if not np.isnan(arm_ratio) else np.nan,
+        "arm_flags":       "|".join(arm_flags) if arm_flags else "none",
+        "qc_flag":         qc_flag,
     }
     pd.DataFrame([row]).to_csv(path, sep="\t", index=False)
 
@@ -314,7 +332,8 @@ def main():
     print(f"[infer_karyotype] chrX={chrX_cov:.2f}x  chrY={chrY_cov:.2f}x  autosome={autosome_cov:.2f}x")
 
     rx, ry = compute_ratios(chrX_cov, chrY_cov, autosome_cov)
-    karyotype = infer_karyotype(rx, ry)
+    raw_karyotype = infer_karyotype(rx, ry)
+    karyotype = raw_karyotype  # may be updated by rescue in STEP 3b
 
     print(f"[infer_karyotype] RX={rx:.3f}  RY={ry:.3f}  → {karyotype}")
 
@@ -325,27 +344,44 @@ def main():
     # STEP 3: Arm analysis — skip only for XY and XYY
     if karyotype not in SKIP_ARM:
         print(f"[infer_karyotype] Running Xp/Xq arm analysis")
-        xp_mean, xq_mean, arm_ratio, arm_flags = arm_analysis(windows)
-        print(f"[infer_karyotype] Xp={xp_mean:.2f}x  Xq={xq_mean:.2f}x  ratio={arm_ratio:.3f}")
+        xp_mean, xq_mean, arm_ratio, arm_flags = arm_analysis(windows, autosome_cov)
+        arm_ratio_str = f"{arm_ratio:.3f}" if not np.isnan(arm_ratio) else "nan"
+        print(f"[infer_karyotype] Xp={xp_mean:.2f}x  Xq={xq_mean:.2f}x  ratio={arm_ratio_str}")
         if arm_flags:
             print(f"[infer_karyotype] Arm flags: {arm_flags}")
     else:
         print(f"[infer_karyotype] Skipping arm analysis — not meaningful for {karyotype}")
         xp_mean, xq_mean, arm_ratio, arm_flags = np.nan, np.nan, np.nan, []
 
+    # STEP 3b: Structural handling
+    if arm_flags:
+        print(f"[infer_karyotype] Structural abnormality detected → marking as unknown")
+        karyotype = "unknown"
+
     # STEP 4: Determine QC flag
-    if karyotype != "XX":
-        qc_flag = f"skipped:{karyotype}"
+
+    if raw_karyotype == "XX" and not arm_flags:
+        qc_flag = "pass"
+
     elif arm_flags:
         qc_flag = f"flagged:{','.join(arm_flags)}"
+
     else:
-        qc_flag = "pass"
+        qc_flag = f"skipped:{raw_karyotype}"
 
     print(f"[infer_karyotype] QC flag: {qc_flag}")
 
+    # Derive high-level status
+    if qc_flag == "pass":
+        status = "pass"
+    elif qc_flag.startswith("flagged"):
+        status = "flagged"
+    else:
+        status = "skipped"
+
     # STEP 5: Write TSV
     write_output(
-        args.output_tsv, sample, karyotype, rx, ry,
+        args.output_tsv, sample, raw_karyotype, karyotype, status, rx, ry,
         xp_mean, xq_mean, arm_ratio, arm_flags,
         autosome_cov, qc_flag
     )
@@ -360,8 +396,8 @@ def main():
         plot_xp_xq(xp_mean, xq_mean, autosome_cov, sample)
 
     # STEP 7: Exit
-    if karyotype != "XX":
-        print(f"[infer_karyotype] FLAGGED: {sample} is {karyotype} — not XX, skipping pipeline")
+    if qc_flag != "pass":
+        print(f"[infer_karyotype] FLAGGED: {sample} → {qc_flag}, skipping pipeline")
         sys.exit(2)
 
     print(f"[infer_karyotype] Done → {args.output_tsv}")

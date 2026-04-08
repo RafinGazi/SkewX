@@ -27,13 +27,15 @@ echo "BASE=$BASE"
 echo "OUT=$OUT"
 
 if ! ls "$OUT"/*_sorted.bam 1> /dev/null 2>&1; then
-echo "ERROR: No BAM files found in $OUT"
-exit 1
+    echo "ERROR: No BAM files found in $OUT"
+    exit 1
 fi
 
 ls -lh "$OUT"
 
 shopt -s nullglob
+
+SKIP_MOSDEPTH=${SKIP_MOSDEPTH:-false}
 
 # =========================
 
@@ -88,8 +90,8 @@ if python3 "/mnt/Genomics/Lab/HEAL/X_chr/Rafin/SkewX/bin/infer_karyotype_v2.py" 
 else
     EXIT_CODE=$?
 
-    if [ $EXIT_CODE -eq 2 ]; then
-        echo "[INFO] $NAME skipped (non-XX karyotype — expected in validation)"
+    if [ "$EXIT_CODE" -eq 2 ]; then
+        echo "[INFO] $NAME not passing QC (expected in validation)"
     else
         echo "[ERROR] $NAME failed during karyotype inference"
         exit 1
