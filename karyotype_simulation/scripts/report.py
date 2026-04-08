@@ -200,8 +200,8 @@ def generate_report(results_dir):
     <tr><td>XX</td><td>AUTO + X + X</td><td>XX</td><td>Pass</td></tr>
     <tr><td>XY</td><td>AUTO + X + Y</td><td>XY</td><td>Skip</td></tr>
     <tr><td>XO</td><td>AUTO + 0.5X</td><td>XO</td><td>Skip</td></tr>
-    <tr><td>XXX</td><td>AUTO + X + X + X</td><td>XXX</td><td>Skip</td></tr>
-    <tr><td>XXY</td><td>AUTO + X + X + Y</td><td>XXY</td><td>Skip</td></tr>
+    <tr><td>XXX</td><td>AUTO + X + X + X</td><td>XXX</td><td>Pass</td></tr>
+    <tr><td>XXY</td><td>AUTO + X + X + Y</td><td>XXY</td><td>Pass</td></tr>
     <tr><td>XYY</td><td>AUTO + X + Y + Y</td><td>XYY</td><td>Skip</td></tr>
 
     <tr><td>Xp_deleted</td><td>AUTO + Xq only (Xp removed)</td><td>unknown + Xp_deletion</td><td>Flag</td></tr>
