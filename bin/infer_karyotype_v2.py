@@ -142,37 +142,42 @@ def arm_analysis(windows, autosome_cov):
     xp_mean = np.median(xp["coverage"]) if len(xp) > 0 else np.nan
     xq_mean = np.median(xq["coverage"]) if len(xq) > 0 else np.nan
 
+    # Normalise relative to autosome
+    xp_norm = xp_mean / autosome_cov if autosome_cov > 0 else np.nan
+    xq_norm = xq_mean / autosome_cov if autosome_cov > 0 else np.nan
+
+    # Ratio (for reporting only)
     if np.isnan(xp_mean) or np.isnan(xq_mean) or xq_mean == 0:
         arm_ratio = np.nan
     else:
         arm_ratio = xp_mean / xq_mean
 
     flags = []
-    arm_threshold = autosome_cov * ARM_DELETION_THRESHOLD
 
-    # Absolute coverage check first — catches full arm deletions
-    # where the ratio is undefined or misleading
-    xp_absent = np.isnan(xp_mean) or (xp_mean < arm_threshold)
-    xq_absent = np.isnan(xq_mean) or (xq_mean < arm_threshold)
+    # --- Key idea: detect imbalance, not absolute drop ---
+    if not np.isnan(xp_norm) and not np.isnan(xq_norm):
 
-    if xp_absent and not xq_absent:
-        flags.append("Xp_deletion")
-    elif xq_absent and not xp_absent:
-        flags.append("Xq_deletion")
-    elif xp_absent and xq_absent:
-        # Both arms low — ambiguous, flag both
-        flags.append("Xp_deletion")
-        flags.append("Xq_deletion")
-    elif not np.isnan(arm_ratio):
-        # Ratio-based detection for partial deletions
-        if arm_ratio < ARM_DELETION_THRESHOLD:
-            flags.append("Xp_deletion")
-        elif arm_ratio > (1 / ARM_DELETION_THRESHOLD):
-            flags.append("Xq_deletion")
-        elif arm_ratio < ARM_PARTIAL_THRESHOLD:
-            flags.append("Xp_partial_deletion")
-        elif arm_ratio > (1 / ARM_PARTIAL_THRESHOLD):
-            flags.append("Xq_partial_deletion")
+        arm_diff = abs(xp_norm - xq_norm)
+
+        DIFF_THRESHOLD = 0.25     # detects imbalance
+        ZERO_THRESHOLD = 0.2      # near-zero → full deletion
+        PARTIAL_THRESHOLD = 0.75  # reduced but not zero
+
+        if arm_diff > DIFF_THRESHOLD:
+
+            # Xp affected
+            if xp_norm < xq_norm:
+                if xp_norm < ZERO_THRESHOLD:
+                    flags.append("Xp_deletion")
+                elif xp_norm < PARTIAL_THRESHOLD:
+                    flags.append("Xp_partial_deletion")
+
+            # Xq affected
+            elif xq_norm < xp_norm:
+                if xq_norm < ZERO_THRESHOLD:
+                    flags.append("Xq_deletion")
+                elif xq_norm < PARTIAL_THRESHOLD:
+                    flags.append("Xq_partial_deletion")
 
     return xp_mean, xq_mean, arm_ratio, flags
 
@@ -360,12 +365,10 @@ def main():
 
     # STEP 4: Determine QC flag
 
-    if raw_karyotype == "XX" and not arm_flags:
-        qc_flag = "pass"
-
-    elif arm_flags:
+    if arm_flags:
         qc_flag = f"flagged:{','.join(arm_flags)}"
-
+    elif raw_karyotype == "XX":
+        qc_flag = "pass"
     else:
         qc_flag = f"skipped:{raw_karyotype}"
 

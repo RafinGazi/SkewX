@@ -146,9 +146,42 @@ def generate_report(results_dir):
 
     html = f"""
     <html>
-    <body>
+    <body style="font-family: Arial; margin: 40px; max-width: 1400px;">
 
     <h1>Karyotype Validation Report</h1>
+
+    <h2>Overview</h2>
+    <p>
+    This report validates karyotype inference using simulated BAM files with known chromosomal configurations.
+    The pipeline estimates chromosome copy number from coverage (RX/RY) and detects structural abnormalities
+    using Xp vs Xq arm imbalance.
+    </p>
+
+    <h2>Simulation Design</h2>
+    <table border="1" cellpadding="6">
+    <tr><th>Sample</th><th>Description</th><th>Expected Karyotype</th><th>Expected QC</th></tr>
+
+    <tr><td>XX</td><td>Normal diploid female</td><td>XX</td><td>pass</td></tr>
+
+    <tr><td>XY</td><td>Male (1 X, 1 Y)</td><td>XY</td><td>skipped</td></tr>
+    <tr><td>XO</td><td>Monosomy X (single X chromosome)</td><td>XO</td><td>skipped</td></tr>
+    <tr><td>XXX</td><td>Trisomy X</td><td>XXX</td><td>skipped</td></tr>
+    <tr><td>XXY</td><td>Klinefelter syndrome (2 X, 1 Y)</td><td>XXY</td><td>skipped</td></tr>
+    <tr><td>XYY</td><td>Extra Y chromosome</td><td>XYY</td><td>skipped</td></tr>
+
+    <tr><td>Xp_deleted</td><td>Xp arm removed (coverage drops to ~0)</td><td>unknown</td><td>flagged</td></tr>
+    <tr><td>Xq_deleted</td><td>Xq arm removed (coverage drops to ~0)</td><td>unknown</td><td>flagged</td></tr>
+    <tr><td>X_partial</td><td>Partial Xp reduction (~50% coverage)</td><td>unknown</td><td>flagged</td></tr>
+
+    </table>
+
+    <h2>Expected Behaviour</h2>
+    <ul>
+    <li><b>XX:</b> Balanced X coverage → passes QC</li>
+    <li><b>Non-XX (XY, XO, XXX, XXY, XYY):</b> Identified by RX/RY → skipped</li>
+    <li><b>Structural abnormalities:</b> Detected via Xp/Xq imbalance → flagged</li>
+    <li><b>Key principle:</b> XO shows uniform reduction across X, whereas deletions show arm-specific drops</li>
+    </ul>
 
     <h2>Results</h2>
     <table border="1">
