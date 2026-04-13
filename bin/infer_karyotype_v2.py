@@ -400,10 +400,7 @@ def main():
     if karyotype not in SKIP_ARM:
         plot_xp_xq(xp_mean, xq_mean, autosome_cov, sample)
 
-    # STEP 7: Exit
-    if qc_flag != "pass":
-        print(f"[infer_karyotype] FLAGGED: {sample} → {qc_flag}, skipping pipeline")
-        sys.exit(2)
+    print(f"[infer_karyotype] Final QC: {sample} → {qc_flag}")
 
     print(f"[infer_karyotype] Done → {args.output_tsv}")
 

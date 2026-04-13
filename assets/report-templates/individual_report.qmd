@@ -71,6 +71,21 @@ patient <- "ext_meta_id"
 all_tissues <- c("ext_all_tissues_list")
 blocks_stats_file <- "ext_blocks_stats_file"
 CGI_bed_file <- "ext_CGI_bed_file"
+karyotype_tsv <- "ext_karyotype_tsv"
+kary <- read_tsv(karyotype_tsv, show_col_types = FALSE)
+qc_flag <- kary$qc_flag[1]
+
+cat("## QC\n\n")
+
+cat("### QC Status\n\n")
+
+if (qc_flag == "pass") {
+    cat("🟢 PASS — proceeding with full analysis.\n\n")
+} else if (startsWith(qc_flag, "skipped")) {
+    cat(paste0("🟡 SKIPPED — sample excluded from downstream analysis (", qc_flag, ").\n\n"))
+} else if (startsWith(qc_flag, "flagged")) {
+    cat(paste0("🔴 FLAGGED — anomaly detected (", qc_flag, "). Manual inspection recommended.\n\n"))
+}
 ```
 
 ### Number of haplotyped CpG islands
@@ -116,12 +131,21 @@ The [whatshap]() report shows the number of SNVs that were found for the individ
 
 ## Skew calculations
 
-Skew calculations are based on the number of Xa and Xi reads assigned to each haplotype, in each block. These count tables for each sample can be downloaded below.
+```{r}
+#| echo: false
+
+if (qc_flag != "pass") {
+    cat(paste0("Skew analysis not performed due to QC status: ", qc_flag, "\n"))
+} else { 
+    cat("Skew calculations are based on the number of Xa and Xi reads assigned to each haplotype, in each block. These count tables for each sample can be downloaded below.")
+}
 
 ```{r}
 #| label: print-haplotype-skew-download-buttons
 #| echo: true
 #| output: asis
+
+if (qc_flag != "pass") return(NULL)
 
 tarcmd = paste0("tar -hcf", patient, "_CGIX_skews.tar")
 for (tissue in all_tissues) {
@@ -141,6 +165,8 @@ This shows how many of the haplotyped CpG islands could be clustered into Xa and
 #| label: num-clustered-read_tsv
 #| echo: true
 #| output: asis
+
+if (qc_flag != "pass") return(NULL)
 
 num_clustered_reads <- data.frame()
 for (tissue in all_tissues) {
@@ -169,6 +195,7 @@ num_clustered_reads %>%
         num_CGIs = "No. of Clustered CpG Islands"
     )
 ```
+}
 
 {{< downloadthis ext_meta_id_num_clustered_reads.tsv dname="ext_meta_id_num_clustered_reads" label="Download this table of numbers of clustered CGIs" icon="file-earmark-arrow-down" type="secondary" class="data-button" id="num_clustered_reads" >}}
 
@@ -182,6 +209,8 @@ A sample with perfect balance between the two haplotypes would have a skew ratio
 #| label: MLE-skew
 #| echo: true
 #| output: asis
+
+if (qc_flag != "pass") return(NULL)
 
 # calculate skews
 # Define the log-likelihood function for folded binomial distribution with varying number of trials
@@ -230,6 +259,8 @@ The following plots bin the haplotype block skews in 0.05 intervals and plot the
 
 ```{r}
 #| label: distributions-of-skews
+
+if (qc_flag != "pass") return(NULL)
 
 #plot the histograms weighted by supporting reads
 #first read all the skews into 1 table. Keep it long
@@ -291,6 +322,8 @@ If the skew is in a consistent direction (e.g. the maternal allele is preferenti
 
 ```{r}
 #| label: skew-between-tissues
+
+if (qc_flag != "pass") return(NULL)
 
 for (tissue in all_tissues) {
     skew <- read_tsv(paste0(patient,"_",tissue,"_CGIX_skew.tsv.gz"), show_col_types=FALSE) %>%
@@ -362,6 +395,9 @@ Haplotype blocks above the red line at +1 indicate that haplotype1 is over 10 ti
 
 ```{r}
 #plot skews
+
+if (qc_flag != "pass") return(NULL)
+
 all_plots = vector("list", length(all_tissues))
 for (i in 1:length(all_tissues)) {
     tissue = all_tissues[[i]]
@@ -548,124 +584,3 @@ if (kary$arm_flags == "none") {
 ```
 
 {{< downloadthis ext_karyotype_tsv dname="ext_meta_id_karyotype" label="Download karyotype results" icon="file-earmark-arrow-down" type="secondary" class="data-button" id="karyotype_tsv" >}}
-
-## Cohort QC
-
-This section compares this individual's chrX/autosome (RX) and chrY/autosome (RY) coverage ratios against all other samples in the cohort using DBSCAN density-based clustering. Samples that cluster together with the majority of the cohort are flagged as **PASS**, while samples that fall outside the main cluster are flagged as **OUTLIER**.
-
-**What this tells you:** RX and RY together define the sex chromosome dosage signature of a sample. A typical XX female will have RX ≈ 1.0 and RY ≈ 0.0, while an XY male will have RX ≈ 0.5 and RY ≈ 0.5. Clustering across the cohort helps detect mislabelled samples, unexpected karyotypes, or sequencing anomalies — a sample flagged as OUTLIER warrants manual review.
-
-> **⚠️ Note:** DBSCAN requires a minimum number of samples to form a meaningful cluster. With fewer than ~10 samples, all samples may be flagged as OUTLIER. This does **not** indicate a problem with the sample — it simply means the cohort is too small for reliable clustering. The RX and RY values themselves remain valid.
-
-
-```{r}
-#| label: cohort-qc
-#| echo: false
-#| message: false
-#| warning: false
-
-library(tidyverse)
-library(gt)
-
-cohort_tsv <- "ext_cohort_tsv"
-karyotype_tsv <- "ext_karyotype_tsv"
-cohort <- read_tsv(cohort_tsv, show_col_types = FALSE)
-kary   <- read_tsv(karyotype_tsv, show_col_types = FALSE)
-sample_id <- kary$individual[1]
-row <- cohort %>%
-    filter(individual == sample_id)
-if (nrow(row) == 0) {
-    cat("This sample was not found in cohort QC results.")
-} else {
-    cat(sprintf("Sample %s compared against cohort distribution.\n\n", sample_id))
-    required_cols <- c("individual", "chrX_ratio", "chrY_ratio", "karyotype", "cohort_qc_flag")
-    missing_cols <- setdiff(required_cols, colnames(row))
-    if (length(missing_cols) > 0) {
-        cat("Missing expected columns in cohort results:", paste(missing_cols, collapse=", "))
-    } else {
-        row %>%
-            select(all_of(required_cols)) %>%
-            gt() %>%
-            tab_header(
-                title = md("**Cohort-level QC Check**"),
-                subtitle = "Position of this sample relative to cohort clusters"
-            ) %>%
-            cols_label(
-                individual       = "Individual",
-                chrX_ratio       = "RX",
-                chrY_ratio       = "RY",
-                karyotype        = "Karyotype",
-                cohort_qc_flag   = "QC Status"
-            ) %>%
-            tab_style(
-                style = cell_fill(color = "#d4edda"),
-                locations = cells_body(rows = cohort_qc_flag == "PASS")
-            ) %>%
-            tab_style(
-                style = cell_fill(color = "#f8d7da"),
-                locations = cells_body(rows = cohort_qc_flag != "PASS")
-            ) %>%
-            opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
-    }
-}
-```
-
-## Skew-enhanced phasing
-
-This VCF has been re-phased using X-inactivation skew information.  
-Only chrX variants within informative phase blocks are adjusted.
-
-{{< downloadthis ext_skew_phased_vcf 
-    dname="ext_meta_id_skew_phased" 
-    label="Download skew-phased VCF" >}}
-
-### Skew phasing summary
-
-Variants phased on chrX were adjusted using skew information derived from haplotype imbalance.
-
-A higher flip rate indicates stronger skew and greater confidence in skew-driven phasing.
-
-- **<10%** → weak/no skew  
-- **10–20%** → moderate skew  
-- **>20%** → strong skew (informative sample)
-
-```{r}
-#| echo: false
-
-skew_file <- "ext_skew_metrics"
-if (file.exists(skew_file)) {
-
-    skew_metrics <- read.delim(skew_file)
-
-    cat(sprintf("Flip rate: %.2f%%\n\n", skew_metrics$flip_rate))
-    skew_metrics %>%
-        gt() %>%
-        tab_header(title = md("**Skew Phasing Metrics**")) %>%
-        cols_label(
-            total_variants = "Total chrX variants",
-            flipped        = "Variants flipped",
-            kept           = "Variants kept",
-            skipped        = "Variants skipped",
-            flip_rate      = "Flip rate (%)"
-        ) %>%
-        fmt_number(columns = flip_rate, decimals = 2) %>%
-        tab_style(
-            style = cell_fill(color = "#fff3cd"),
-            locations = cells_body(
-                columns = flip_rate,
-                rows = flip_rate > 10 & flip_rate <= 20
-            )
-        ) %>%
-        tab_style(
-            style = cell_fill(color = "#d4edda"),
-            locations = cells_body(
-                columns = flip_rate,
-                rows = flip_rate > 20
-            )
-        ) %>%
-        opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
-
-} else {
-    cat("No skew phasing metrics available.")
-}
-```

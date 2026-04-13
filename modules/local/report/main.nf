@@ -8,16 +8,12 @@ process REPORT_INDIVIDUAL {
           path(htmls),
           path(whatshap_stats),
           path(whatshap_blocks),
-          path(clustered_reads_tsv),
-          path(skew_tsv),
+          path(clustered_reads_tsv, optional: true),
+          path(skew_tsv, optional: true),
           path(karyotype_tsv),
           path(karyotype_plot),
-          path(cohort_tsv),
-          path(cohort_plot),
           path(cgi_bed),
           path(report_template),
-          path(skew_phased_vcf),
-          path(skew_metrics)
 
     output:
     path("${meta.id}_report.qmd"), emit: qmds
@@ -28,7 +24,6 @@ process REPORT_INDIVIDUAL {
     path(skew_tsv),                emit: skew_tsv
     path(karyotype_tsv),           emit: karyotype_tsv
     path(karyotype_plot),          emit: karyotype_plot
-    path(skew_phased_vcf),         emit: skew_phased_vcf 
 
     script:
     """
@@ -52,18 +47,6 @@ process REPORT_INDIVIDUAL {
 
     # sub karyotype plot path into report
     sed -i "s/ext_karyotype_plot/${karyotype_plot}/g" "${meta.id}_report.qmd"
-
-    # skew phased vcf path into report
-    sed -i "s|ext_skew_phased_vcf|${skew_phased_vcf}|g" "${meta.id}_report.qmd"
-
-    # skew metrics path into report
-    sed -i "s|ext_skew_metrics|${skew_metrics}|g" "${meta.id}_report.qmd"
-    
-    # sub cohort tsv path into report
-    sed -i "s/ext_cohort_tsv/${cohort_tsv}/g" "${meta.id}_report.qmd"
-
-    # sub cohort plot path into report
-    sed -i "s/ext_cohort_plot/${cohort_plot}/g" "${meta.id}_report.qmd"
 
     # turn text files into qmd for code formatting
     echo '```' | cat - ${whatshap_stats} > "_${whatshap_stats.baseName}.qmd"
@@ -89,11 +72,8 @@ process REPORT_BOOK {
         path(whatshap_stats)
         path(whatshap_blocks)
         path(clustered_reads)
-        path(skews)
         path(karyotype_tsvs)
         path(karyotype_plots)
-        path(cohort_tsvs)     
-        path(cohort_plots)    
         path(cgi_bed)
 
     output:

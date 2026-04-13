@@ -66,11 +66,9 @@ include {MOSDEPTH} from "./modules/local/mosdepth/main.nf"
 include {MOSDEPTH as MOSDEPTH_MERGED} from "./modules/local/mosdepth/main.nf"
 include {SAMTOOLS_VIEWHP} from "./modules/local/samtools/view_hp/main.nf"
 include {R_CLUSTERBYMETH} from "./modules/local/R/cluster_by_meth/main.nf"
-include { SKEW_PHASE } from "./modules/local/skew_phase/main.nf"
 include {reporting} from "./subworkflows/reporting.nf"
 include {separated_deepvariant} from "./subworkflows/local/deepvariant/main.nf"
 include { INFER_KARYOTYPE } from './modules/local/py/infer_karyotype/main'
-include { COHORT_KARYOTYPE_QC } from './modules/local/py/cohort_karyotype_qc/main'
 
 //
 // WORKFLOW: Run main SkewX analysis pipeline
@@ -244,7 +242,7 @@ workflow SKEWX {
     // .summary → INFER_KARYOTYPE
     MOSDEPTH(ch_samples_haplotag)
 
-    // Karyotype — runs in parallel, does not block main pipeline
+    // Karyotype 
     ch_karyotype = INFER_KARYOTYPE(
         MOSDEPTH.out.bed
             .join(MOSDEPTH.out.summary, by: 0)
@@ -253,11 +251,30 @@ workflow SKEWX {
             }
     )
 
-    ch_cohort = COHORT_KARYOTYPE_QC(
-        ch_karyotype.karyotype_tsv.map { meta, tsv -> tsv }.collect()
-    )
+    ch_karyotype_qc = ch_karyotype.karyotype_tsv
+        .map { meta, tsv ->
+            def lines = tsv.text.readLines()
+            def header = lines[0].split('\t')
+            def values = lines[1].split('\t')
 
-    (ch_tmp_samples_haplotag, ch_cgibed_rep) = ch_samples_haplotag
+            def qc_idx = header.indexOf("qc_flag")
+            def qc_flag = values[qc_idx]
+
+            tuple(meta + [qc_flag: qc_flag])
+        }
+
+    ch_branch = ch_karyotype_qc.branch {
+        pass:    it.qc_flag == "pass"
+        skipped: it.qc_flag.startsWith("skipped")
+        flagged: it.qc_flag.startsWith("flagged")
+    }
+
+
+    ch_samples_haplotag_pass = ch_samples_haplotag
+        .join(ch_branch.pass.map{ meta -> tuple(meta.id, true) }, by: 0)
+        .map { id, meta, bam, bai, _ -> tuple(meta, bam, bai) }
+
+    (ch_tmp_samples_haplotag, ch_cgibed_rep) = ch_samples_haplotag_pass
         .combine(ch_cgibed.collect())
         .multiMap { it ->
             samples_haplotag: tuple(it[0], it[1], it[2])
@@ -268,30 +285,6 @@ workflow SKEWX {
 
     ch_clustered_reads = R_CLUSTERBYMETH(ch_hpreads, ch_cgibed_rep)
 
-    # skew based phasing
-    ch_skew_input = ch_clustered_reads
-    .map { meta, clustered_reads, skew_tsv ->
-        tuple(meta, skew_tsv)
-    }
-    .join(
-        ch_vcf_phased.map { meta, bam, bai, vcf, vcf_idx ->
-            tuple(meta, vcf)
-        },
-        by: 0
-    )
-    .map { meta, skew, vcf ->
-        tuple(meta, vcf, skew)
-    }
-
-    ch_skew = SKEW_PHASE(ch_skew_input)
-
-    ch_skew_phased = ch_skew.map { meta, vcf, tbi, metrics ->
-        tuple(meta, vcf)
-    }
-
-    ch_skew_metrics = ch_skew.map { meta, vcf, tbi, metrics ->
-        tuple(meta, metrics)
-    }
 
     if (params.stage != "haplotagged") {
         book = reporting(
@@ -301,11 +294,7 @@ workflow SKEWX {
             ch_clustered_reads,
             ch_cgibed,
             ch_karyotype.karyotype_tsv,
-            ch_karyotype.karyotype_plot,
-            ch_cohort.qc_tsv,
-            ch_cohort.qc_plot,
-            ch_skew_phased,
-            ch_skew_metrics
+            ch_karyotype.karyotype_plot
         )
     }
 }
