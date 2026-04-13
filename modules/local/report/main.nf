@@ -1,14 +1,13 @@
 process REPORT_INDIVIDUAL {
 
     tag "$meta.id"
-    label "process_single"
 
     input:
     tuple val(meta),
           path(htmls),
           path(whatshap_stats),
           path(whatshap_blocks),
-          path(clustered_reads_tsv),
+          path(clustered_reads),
           path(skew_tsv),
           path(karyotype_tsv),
           path(karyotype_plot),
@@ -17,66 +16,64 @@ process REPORT_INDIVIDUAL {
 
     output:
     path("${meta.id}_report.qmd"), emit: qmds
-    path(htmls),                   emit: htmls
+    path(htmls), emit: htmls
     path("_${whatshap_stats.baseName}.qmd"), emit: whatshap_stats
-    path(whatshap_blocks),         emit: whatshap_blocks
-    path(clustered_reads_tsv),     emit: clustered_reads
-    path(skew_tsv),                emit: skew_tsv
-    path(karyotype_tsv),           emit: karyotype_tsv
-    path(karyotype_plot),          emit: karyotype_plot
+    path(whatshap_blocks), emit: whatshap_blocks
+    path(clustered_reads), emit: clustered_reads
+    path(skew_tsv), emit: skew_tsv
+    path(karyotype_tsv), emit: karyotype_tsv
+    path(karyotype_plot), emit: karyotype_plot
 
     script:
     """
-    # --- handle optional inputs safely ---
-
-    # clustered_reads may be missing
-    if [[ ! -f "${clustered_reads_tsv}" ]]; then
-        echo "No clustered reads" > clustered_reads_placeholder.txt
-        clustered_reads_tsv="clustered_reads_placeholder.txt"
-    fi
-
-    # skew may be missing
-    if [[ ! -f "${skew_tsv}" ]]; then
-        echo "No skew data" > skew_placeholder.txt
-        skew_tsv="skew_placeholder.txt"
-    fi
-
-    # --- existing logic continues ---
-
-    # copy individual template
     cp "${report_template}" "${meta.id}_report.qmd"
 
-    # substitute individual id into report
+    # identifiers
     sed -i "s/ext_meta_id/${meta.id}/g" "${meta.id}_report.qmd"
-
-    # sub whatshap stats blocks file path into report
-    sed -i "s/ext_blocks_stats_file/${whatshap_blocks}/g" "${meta.id}_report.qmd"
-
-    # sub path to CGI bed file into each report
-    sed -i "s/ext_CGI_bed_file/${cgi_bed}/g" "${meta.id}_report.qmd"
-
-    # sub tissue names into report
     sed -i "s/ext_all_tissues_list/${meta.sample}/g" "${meta.id}_report.qmd"
 
-    # sub karyotype tsv path into report
-    sed -i "s/ext_karyotype_tsv/${karyotype_tsv}/g" "${meta.id}_report.qmd"
+    # file paths for R
+    sed -i "s|ext_blocks_stats_file|${whatshap_blocks}|g" "${meta.id}_report.qmd"
+    sed -i "s|ext_CGI_bed_file|${cgi_bed}|g" "${meta.id}_report.qmd"
+    sed -i "s|ext_karyotype_tsv|${karyotype_tsv}|g" "${meta.id}_report.qmd"
+    sed -i "s|ext_karyotype_plot|${karyotype_plot}|g" "${meta.id}_report.qmd"
 
-    # sub karyotype plot path into report
-    sed -i "s/ext_karyotype_plot/${karyotype_plot}/g" "${meta.id}_report.qmd"
-
-    # turn text files into qmd for code formatting
+    # format whatshap stats include
     echo '```' | cat - ${whatshap_stats} > "_${whatshap_stats.baseName}.qmd"
     echo '```' >> "_${whatshap_stats.baseName}.qmd"
     """
-
 }
+
+
+process REPORT_SKIPPED {
+
+    tag "$meta.id"
+
+    input:
+    tuple val(meta),
+          path(karyotype_tsv),
+          path(karyotype_plot),
+          path(report_template)
+
+    output:
+    path("${meta.id}_skipped_report.qmd"), emit: qmds
+
+    script:
+    """
+    cp "${report_template}" "${meta.id}_skipped_report.qmd"
+
+    sed -i "s/ext_meta_id/${meta.id}/g" "${meta.id}_skipped_report.qmd"
+    sed -i "s|ext_karyotype_tsv|${karyotype_tsv}|g" "${meta.id}_skipped_report.qmd"
+    sed -i "s|ext_karyotype_plot|${karyotype_plot}|g" "${meta.id}_skipped_report.qmd"
+    """
+}
+
 
 process REPORT_BOOK {
 
     label "process_low"
     stageInMode "copy"
     publishDir "${params.outdir}", mode: "copy"
-    conda "${moduleDir}/../R/environment.yml"
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'library://qgouil/skewx/skewx-r:0.2' :
         'ghcr.io/qgouil/skewx-r:0.2' }"
@@ -88,6 +85,7 @@ process REPORT_BOOK {
         path(whatshap_stats)
         path(whatshap_blocks)
         path(clustered_reads)
+        path(skew_tsvs)
         path(karyotype_tsvs)
         path(karyotype_plots)
         path(cgi_bed)

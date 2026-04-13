@@ -1,69 +1,107 @@
 include {MOSDEPTH_PLOTDIST} from "../modules/local/mosdepth/plotdist/main.nf"
 include {NANOCOMP} from "../modules/local/nanocomp/main.nf"
 include {REPORT_INDIVIDUAL} from "../modules/local/report/main.nf"
+include {REPORT_SKIPPED} from "../modules/local/report/main.nf"
 include {REPORT_BOOK} from "../modules/local/report/main.nf"
 
 workflow reporting {
+
     take:
-        mosdepth_report_results // channel containing by-sample and merged mosdepth report results
-        haplotagged_samples     // channel containing by-sample and merged sample haplotagged bams
-        whatshap_stats_blocks   // channel containing phased vcfs block stats
-        clustered_reads         // channel containing clustered reads and skew information
-        cgi_bed                 // single-item channel containing CGI bed file
-        karyotype_tsv           // channel containing karyotype TSV per individual
-        karyotype_plot          // channel containing karyotype coverage plot per individual
+        mosdepth_report_results
+        haplotagged_samples
+        whatshap_stats_blocks
+        clustered_reads
+        cgi_bed
+        karyotype_tsv
+        karyotype_plot
+        ch_pass
+        ch_skipped
+        ch_flagged
 
     main:
-        // prepare mosdepth coverage report
-        ch_global_dist_bysample = mosdepth_report_results
-            .map{ it -> tuple(it[0], it[1]) }
 
-        ch_mosdepth_dist_report = MOSDEPTH_PLOTDIST(ch_global_dist_bysample)
+    /*
+    ---------------- PASS ----------------
+    */
 
-        // prepare nanocomp reports
-        ch_nanocomp = NANOCOMP(haplotagged_samples)
+    ch_global_dist_bysample = mosdepth_report_results
+        .map { tuple(it[0], it[1]) }
 
-        // combine all inputs for individual report
-        ch_combined_qc_reports = ch_nanocomp
-            .map{ it -> tuple(it[0].id, it[0].sample, it[1]) }
-            .join(ch_mosdepth_dist_report.map{ it -> tuple(it[0].id, it[0].sample, it[1]) })
-            .join(whatshap_stats_blocks.map{ it -> tuple(it[0].id, it[0].sample, it[1], it[2]) })
-            .join(clustered_reads.map{ it -> tuple(it[0].id, it[0].sample, it[1], it[2]) }.groupTuple(), remainder: true)
-            .join(karyotype_tsv.map{ it -> tuple(it[0].id, it[1]) })
-            .join(karyotype_plot.map{ it -> tuple(it[0].id, it[1]) })
-            .map{ it -> tuple(
+    ch_mosdepth_dist_report = MOSDEPTH_PLOTDIST(ch_global_dist_bysample)
+    ch_nanocomp = NANOCOMP(haplotagged_samples)
+
+    ch_combined_pass = ch_nanocomp
+        .map { tuple(it[0].id, it[0].sample, it[1]) }
+        .join(ch_mosdepth_dist_report.map { tuple(it[0].id, it[0].sample, it[1]) })
+        .join(whatshap_stats_blocks.map { tuple(it[0].id, it[0].sample, it[1], it[2]) })
+        .join(clustered_reads.map { tuple(it[0].id, it[0].sample, it[1], it[2]) }.groupTuple())
+        .join(karyotype_tsv.map { tuple(it[0].id, it[1]) })
+        .join(karyotype_plot.map { tuple(it[0].id, it[1]) })
+
+        .map { it ->
+            tuple(
                 [id: it[0], sample: it[1]],
-                it[2] + [it[4]],   // htmls
-                it[6],             // whatshap_stats
-                it[7],             // whatshap_blocks
-                it[9],             // clustered_reads
-                it[10],            // skew_tsv
-                it[11],            // karyotype_tsv
-                it[12],             // karyotype_plot
-            )}
-            .combine(cgi_bed.map{ it -> it[1] })
-            .combine(channel.fromPath("${projectDir}/assets/report-templates/individual_report.qmd", checkIfExists: true))
+                it[2] + [it[4]],
+                it[6],
+                it[7],
+                it[9],
+                it[10],
+                it[11],
+                it[12]
+            )
+        }
 
-        ch_reporting_files = REPORT_INDIVIDUAL(ch_combined_qc_reports)
+        .combine(cgi_bed.map { it[1] })
+        .combine(channel.fromPath("${projectDir}/assets/report-templates/individual_report.qmd", checkIfExists: true))
 
-        // create channel for templates
-        ch_book_template_files = channel.fromPath([
-            "${projectDir}/assets/report-templates/_quarto_template.yml",
-            "${projectDir}/assets/report-templates/index.qmd"
-        ], checkIfExists: true).collect()
+    ch_pass_reports = REPORT_INDIVIDUAL(ch_combined_pass)
 
-        book = REPORT_BOOK(
-            ch_book_template_files,
-            ch_reporting_files.qmds.collect(),
-            ch_reporting_files.htmls.collect(),
-            ch_reporting_files.whatshap_stats.collect(),
-            ch_reporting_files.whatshap_blocks.collect(),
-            ch_reporting_files.clustered_reads.collect(),
-            ch_reporting_files.skew_tsv.collect(),
-            ch_reporting_files.karyotype_tsv.collect(),
-            ch_reporting_files.karyotype_plot.collect(),
-            cgi_bed.map{ it -> it[1] }
-        )
+
+    /*
+    ---------------- SKIPPED ----------------
+    */
+
+    ch_skipped = ch_skipped.mix(ch_flagged)
+
+    ch_combined_skipped = ch_skipped
+        .map { meta -> tuple(meta.id, meta.sample, meta.qc_flag) }
+        .join(karyotype_tsv.map { tuple(it[0].id, it[1]) })
+        .join(karyotype_plot.map { tuple(it[0].id, it[1]) })
+        .map { id, sample, qc_flag, karyo_tsv, karyo_plot ->
+            tuple(
+                [id: id, sample: sample, qc_flag: qc_flag],
+                karyo_tsv,
+                karyo_plot
+            )
+        }
+        .combine(channel.fromPath("${projectDir}/assets/report-templates/skipped_report.qmd", checkIfExists: true))
+
+    ch_skipped_reports = REPORT_SKIPPED(ch_combined_skipped)
+
+
+    /*
+    ---------------- BOOK ----------------
+    */
+
+    ch_all_qmds = ch_pass_reports.qmds.mix(ch_skipped_reports.qmds)
+
+    ch_book_template_files = channel.fromPath([
+        "${projectDir}/assets/report-templates/_quarto_template.yml",
+        "${projectDir}/assets/report-templates/index.qmd"
+    ], checkIfExists: true).collect()
+
+    book = REPORT_BOOK(
+        ch_book_template_files,
+        ch_all_qmds.collect(),
+        ch_pass_reports.htmls.collect().ifEmpty([]),
+        ch_pass_reports.whatshap_stats.collect().ifEmpty([]),
+        ch_pass_reports.whatshap_blocks.collect().ifEmpty([]),
+        ch_pass_reports.clustered_reads.collect().ifEmpty([]),
+        ch_pass_reports.skew_tsv.collect().ifEmpty([]),
+        ch_pass_reports.karyotype_tsv.collect().ifEmpty([]),
+        ch_pass_reports.karyotype_plot.collect().ifEmpty([]),
+        cgi_bed.map { it[1] }
+    )
 
     emit:
         book

@@ -68,7 +68,7 @@ include {SAMTOOLS_VIEWHP} from "./modules/local/samtools/view_hp/main.nf"
 include {R_CLUSTERBYMETH} from "./modules/local/R/cluster_by_meth/main.nf"
 include {reporting} from "./subworkflows/reporting.nf"
 include {separated_deepvariant} from "./subworkflows/local/deepvariant/main.nf"
-include { INFER_KARYOTYPE } from './modules/local/py/infer_karyotype/main'
+include { INFER_KARYOTYPE } from './modules/local/py/infer_karyotype/main.nf'
 
 //
 // WORKFLOW: Run main SkewX analysis pipeline
@@ -173,28 +173,37 @@ workflow SKEWX {
 
         if (params.stage == "phased") {
 
-            log.info "Stage: phased — running Whatshap phasing"
+            // log.info "Stage: phased — running Whatshap phasing"
 
-            // Prepare input VCF + BAM
-            ch_vcf_input = ch_merged_bam
+            // // Prepare input VCF + BAM
+            // ch_vcf_input = ch_merged_bam
+            //     .map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) }
+            //     .join(ch_vcf_per_individual, by: 0)
+            //     .map { id, meta, bam, bai, vcf ->
+            //         tuple(meta, bam, bai, vcf, "${vcf}.tbi")
+            //     }
+
+            // // Prepare reference (same format as raw stage)
+            // ch_reference_rep_merged = ch_merged_bam
+            //     .combine(ch_reference.collect())
+            //     .map { meta, merged_bam, merged_bam_idx, meta_ref, ref, ref_idx ->
+            //         tuple(meta_ref, ref, ref_idx)
+            //     }
+
+            // // Run Whatshap phasing
+            // ch_vcf_phased = WHATSHAP_PHASE(
+            //     ch_vcf_input,
+            //     ch_reference_rep_merged
+            // )    
+
+            log.info "Stage: phased — using pre-phased VCF (skipping Whatshap phase)"
+
+            ch_vcf_phased = ch_merged_bam
                 .map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) }
                 .join(ch_vcf_per_individual, by: 0)
                 .map { id, meta, bam, bai, vcf ->
                     tuple(meta, bam, bai, vcf, "${vcf}.tbi")
-                }
-
-            // Prepare reference (same format as raw stage)
-            ch_reference_rep_merged = ch_merged_bam
-                .combine(ch_reference.collect())
-                .map { meta, merged_bam, merged_bam_idx, meta_ref, ref, ref_idx ->
-                    tuple(meta_ref, ref, ref_idx)
-                }
-
-            // Run Whatshap phasing
-            ch_vcf_phased = WHATSHAP_PHASE(
-                ch_vcf_input,
-                ch_reference_rep_merged
-            )            
+                }        
 
         }
 
@@ -252,26 +261,20 @@ workflow SKEWX {
     )
 
     ch_karyotype_qc = ch_karyotype.karyotype_tsv
-        .map { meta, tsv ->
-            def lines = tsv.text.readLines()
-            def header = lines[0].split('\t')
-            def values = lines[1].split('\t')
-
-            def qc_idx = header.indexOf("qc_flag")
-            def qc_flag = values[qc_idx]
-
-            tuple(meta + [qc_flag: qc_flag])
-        }
+        .map { meta, tsv -> tuple(meta, tsv) }
+        .splitCsv(header: true, sep: '\t', elem: 1)
+        .map { meta, row -> tuple(meta + [qc_flag: row.qc_flag]) }
 
     ch_branch = ch_karyotype_qc.branch {
-        pass:    it.qc_flag == "pass"
-        skipped: it.qc_flag.startsWith("skipped")
-        flagged: it.qc_flag.startsWith("flagged")
+        pass:    it.qc_flag.toString() == "pass"
+        skipped: it.qc_flag.toString().startsWith("skipped")
+        flagged: it.qc_flag.toString().startsWith("flagged")
     }
 
 
     ch_samples_haplotag_pass = ch_samples_haplotag
-        .join(ch_branch.pass.map{ meta -> tuple(meta.id, true) }, by: 0)
+        .map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) }
+        .join(ch_branch.pass.map { meta -> tuple(meta.id, true) })
         .map { id, meta, bam, bai, _ -> tuple(meta, bam, bai) }
 
     (ch_tmp_samples_haplotag, ch_cgibed_rep) = ch_samples_haplotag_pass
@@ -294,7 +297,10 @@ workflow SKEWX {
             ch_clustered_reads,
             ch_cgibed,
             ch_karyotype.karyotype_tsv,
-            ch_karyotype.karyotype_plot
+            ch_karyotype.karyotype_plot,
+            ch_branch.pass,
+            ch_branch.skipped,
+            ch_branch.flagged
         )
     }
 }

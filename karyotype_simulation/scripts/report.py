@@ -47,7 +47,8 @@ def generate_report(results_dir):
     df = pd.concat([pd.read_csv(f, sep="\t") for f in tsv_files], ignore_index=True)
 
     df["arm_flags"] = df["arm_flags"].fillna("none")
-    df["xp_xq_ratio"] = df.get("xp_xq_ratio", pd.Series([float("nan")] * len(df)))
+    if "xp_xq_ratio" not in df.columns:
+        df["xp_xq_ratio"] = float("nan")
 
     # =========================
     # Summary
@@ -63,7 +64,7 @@ def generate_report(results_dir):
             correct += 1
         elif sample in EXPECTED_SKIP and qc.startswith("skipped"):
             correct += 1
-        elif sample in ["XX", "XXX", "XXY"] and qc == "pass":
+        elif sample in EXPECTED_PASS and qc == "pass":
             correct += 1
 
     summary_html = f"""
@@ -199,7 +200,7 @@ def generate_report(results_dir):
 
     <tr><td>XX</td><td>AUTO + X + X</td><td>XX</td><td>Pass</td></tr>
     <tr><td>XY</td><td>AUTO + X + Y</td><td>XY</td><td>Skip</td></tr>
-    <tr><td>XO</td><td>AUTO + 0.5X</td><td>XO</td><td>Skip</td></tr>
+    <tr><td>XO</td><td>AUTO + X</td><td>XO</td><td>Skip</td></tr>
     <tr><td>XXX</td><td>AUTO + X + X + X</td><td>XXX</td><td>Pass</td></tr>
     <tr><td>XXY</td><td>AUTO + X + X + Y</td><td>XXY</td><td>Pass</td></tr>
     <tr><td>XYY</td><td>AUTO + X + Y + Y</td><td>XYY</td><td>Skip</td></tr>

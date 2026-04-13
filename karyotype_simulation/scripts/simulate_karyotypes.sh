@@ -45,10 +45,7 @@ build_and_index "XY" "$AUTO" "$X" "$Y"
 build_and_index "XX" "$AUTO" "$X" "$X"
 
 # XO — half coverage chrX, no Y
-samtools view -b -s 0.5 "$X" -o "${OUT_DIR}/X_half.bam"
-samtools index "${OUT_DIR}/X_half.bam"
-build_and_index "XO" "$AUTO" "${OUT_DIR}/X_half.bam"
-rm -f "${OUT_DIR}/X_half.bam" "${OUT_DIR}/X_half.bam.bai"
+build_and_index "XX" "$AUTO" "$X"
 
 # XXX — 3x chrX
 build_and_index "XXX" "$AUTO" "$X" "$X" "$X"

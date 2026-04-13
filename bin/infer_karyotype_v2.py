@@ -9,9 +9,9 @@
 #   1. Read mosdepth summary → compute RX, RY → infer karyotype
 #   2. Load windows for all samples (needed for genome coverage plot)
 #   3. Run arm analysis for all karyotypes except XY and XYY
-#   3b. Rescue XO → XX if arm flags detected (structural deletion, not monosomy)
-#   4. If not XX → write TSV + plots, exit code 2
-#   5. If XX → write TSV + all plots, exit code 0
+#   If structural abnormality detected → classify as unknown (not simple aneuploidy)
+#   4. If not at lesat 2X → write TSV + plots, exit code 2
+#   5. If at least 2X → write TSV + all plots, exit code 0
 #
 # Inputs:
 #   mosdepth regions bed.gz   (window coverage)
@@ -38,9 +38,6 @@ RX_ONE_COPY  = 0.65
 RX_TWO_COPY  = 1.35
 RY_PRESENT   = 0.05
 RY_TWO_COPY  = 0.75
-
-ARM_DELETION_THRESHOLD = 0.60
-ARM_PARTIAL_THRESHOLD  = 0.75
 
 # Karyotypes where arm analysis is not meaningful
 SKIP_ARM = {"XY", "XYY"}
@@ -147,7 +144,7 @@ def arm_analysis(windows, autosome_cov):
     xq_norm = xq_mean / autosome_cov if autosome_cov > 0 else np.nan
 
     # Ratio (for reporting only)
-    if np.isnan(xp_mean) or np.isnan(xq_mean) or xq_mean == 0:
+    if np.isnan(xp_mean) or np.isnan(xq_mean) or xq_mean == 0 or xp_mean == 0:
         arm_ratio = np.nan
     else:
         arm_ratio = xp_mean / xq_mean
@@ -338,7 +335,7 @@ def main():
 
     rx, ry = compute_ratios(chrX_cov, chrY_cov, autosome_cov)
     raw_karyotype = infer_karyotype(rx, ry)
-    karyotype = raw_karyotype  # may be updated by rescue in STEP 3b
+    karyotype = raw_karyotype
 
     print(f"[infer_karyotype] RX={rx:.3f}  RY={ry:.3f}  → {karyotype}")
 

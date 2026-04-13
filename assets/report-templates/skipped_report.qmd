@@ -1,0 +1,90 @@
+---
+title: "ext_meta_id"
+format:
+  html:
+    grid:
+      body-width: 900px
+    toc: true
+    toc-depth: 2
+    code-fold: true
+    code-tools: true
+---
+
+## QC Summary
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(gt)
+
+karyotype_tsv <- "ext_karyotype_tsv"
+kary <- read_tsv(karyotype_tsv, show_col_types = FALSE)
+
+qc_flag <- kary$qc_flag[1]
+
+cat("### QC Status\n\n")
+
+if (qc_flag == "pass") {
+    cat("🟢 PASS (unexpected in skipped report)\n\n")
+} else if (startsWith(qc_flag, "skipped")) {
+    cat(paste0("🟡 SKIPPED — ", qc_flag, "\n\n"))
+} else if (startsWith(qc_flag, "flagged")) {
+    cat(paste0("🔴 FLAGGED — ", qc_flag, "\n\n"))
+} else {
+    cat(paste0("⚠️ UNKNOWN QC FLAG — ", qc_flag, "\n\n"))
+}
+```
+
+## Karyotype Summary
+
+```{r}
+#| echo: false
+
+kary %>%
+    select(individual, karyotype, karyotype_conf, x_copies, y_copies,
+           chrX_ratio, chrY_ratio, auto_mean_cov) %>%
+    gt() %>%
+    tab_header(
+        title = gt::md("**Inferred Karyotype**"),
+        subtitle = "Coverage-based inference"
+    )
+```
+
+## Coverage Plot
+
+```{r}
+#| echo: false
+
+knitr::include_graphics("ext_karyotype_plot")
+```
+
+## Xp vs Xq Arm Check
+
+```{r}
+#| echo: false
+
+xp_xq_plot <- sub("\\.png$", "_xp_xq.png", "ext_karyotype_plot")
+
+if (file.exists(xp_xq_plot)) {
+    knitr::include_graphics(xp_xq_plot)
+} else {
+    cat("Xp/Xq plot not available.")
+}
+```
+
+## Interpretation
+
+```{r}
+#| echo: false
+
+cat("This sample was excluded from downstream analysis.\n\n")
+
+if (startsWith(qc_flag, "skipped")) {
+    cat("Reason: insufficient quality or coverage for reliable phasing/skew analysis.\n")
+} else if (startsWith(qc_flag, "flagged")) {
+    cat("Reason: abnormal chromosomal signal detected (requires investigation).\n")
+}
+```
