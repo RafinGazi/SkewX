@@ -13,15 +13,15 @@ process REPORT_INDIVIDUAL {
           path(karyotype_tsv),
           path(karyotype_plot),
           path(cgi_bed),
-          path(report_template),
+          path(report_template)
 
     output:
     path("${meta.id}_report.qmd"), emit: qmds
     path(htmls),                   emit: htmls
     path("_${whatshap_stats.baseName}.qmd"), emit: whatshap_stats
     path(whatshap_blocks),         emit: whatshap_blocks
-    path(clustered_reads_tsv),     emit: clustered_reads
-    path(skew_tsv),                emit: skew_tsv
+    path(clustered_reads_tsv, optional: true),     emit: clustered_reads
+    path(skew_tsv, optional: true),                emit: skew_tsv
     path(karyotype_tsv),           emit: karyotype_tsv
     path(karyotype_plot),          emit: karyotype_plot
 
