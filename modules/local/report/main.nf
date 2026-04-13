@@ -8,8 +8,8 @@ process REPORT_INDIVIDUAL {
           path(htmls),
           path(whatshap_stats),
           path(whatshap_blocks),
-          path(clustered_reads_tsv, optional: true),
-          path(skew_tsv, optional: true),
+          path(clustered_reads_tsv),
+          path(skew_tsv),
           path(karyotype_tsv),
           path(karyotype_plot),
           path(cgi_bed),
@@ -20,13 +20,29 @@ process REPORT_INDIVIDUAL {
     path(htmls),                   emit: htmls
     path("_${whatshap_stats.baseName}.qmd"), emit: whatshap_stats
     path(whatshap_blocks),         emit: whatshap_blocks
-    path(clustered_reads_tsv, optional: true),     emit: clustered_reads
-    path(skew_tsv, optional: true),                emit: skew_tsv
+    path(clustered_reads_tsv),     emit: clustered_reads
+    path(skew_tsv),                emit: skew_tsv
     path(karyotype_tsv),           emit: karyotype_tsv
     path(karyotype_plot),          emit: karyotype_plot
 
     script:
     """
+    # --- handle optional inputs safely ---
+
+    # clustered_reads may be missing
+    if [[ ! -f "${clustered_reads_tsv}" ]]; then
+        echo "No clustered reads" > clustered_reads_placeholder.txt
+        clustered_reads_tsv="clustered_reads_placeholder.txt"
+    fi
+
+    # skew may be missing
+    if [[ ! -f "${skew_tsv}" ]]; then
+        echo "No skew data" > skew_placeholder.txt
+        skew_tsv="skew_placeholder.txt"
+    fi
+
+    # --- existing logic continues ---
+
     # copy individual template
     cp "${report_template}" "${meta.id}_report.qmd"
 
