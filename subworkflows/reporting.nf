@@ -14,6 +14,7 @@ workflow reporting {
         cgi_bed
         karyotype_tsv
         karyotype_plot
+        karyotype_all_plots
         ch_pass
         ch_skipped
         ch_flagged
@@ -37,19 +38,21 @@ workflow reporting {
         .join(clustered_reads.map { tuple(it[0].id, it[0].sample, it[1], it[2]) }.groupTuple())
         .join(karyotype_tsv.map { tuple(it[0].id, it[1]) })
         .join(karyotype_plot.map { tuple(it[0].id, it[1]) })
+        .join(karyotype_all_plots.map { tuple(it[0].id, it[1]) })
 
         .map { it ->
-            tuple(
-                [id: it[0], sample: it[1]],
-                it[2] + [it[4]],
-                it[6],
-                it[7],
-                it[9],
-                it[10],
-                it[11],
-                it[12]
-            )
-        }
+        tuple(
+            [id: it[0], sample: it[1]],
+            it[2] + [it[4]],    // htmls (nanocomp + mosdepth)
+            it[6],              // whatshap stats
+            it[7],              // whatshap blocks
+            it[9],              // clustered reads
+            it[10],             // skew tsv
+            it[11],             // karyotype tsv
+            it[12],             // karyotype plot
+            it[13] instanceof List ? it[13] : [it[13]]              // karyotype all plots
+        )
+    }
 
         .combine(cgi_bed.map { it[1] })
         .combine(channel.fromPath("${projectDir}/assets/report-templates/individual_report.qmd", checkIfExists: true))
@@ -67,11 +70,13 @@ workflow reporting {
         .map { meta -> tuple(meta.id, meta.sample, meta.qc_flag) }
         .join(karyotype_tsv.map { tuple(it[0].id, it[1]) })
         .join(karyotype_plot.map { tuple(it[0].id, it[1]) })
-        .map { id, sample, qc_flag, karyo_tsv, karyo_plot ->
+        .join(karyotype_all_plots.map { tuple(it[0].id, it[1]) })
+        .map { id, sample, qc_flag, karyo_tsv, karyo_plot, karyo_all_plots ->
             tuple(
                 [id: id, sample: sample, qc_flag: qc_flag],
                 karyo_tsv,
-                karyo_plot
+                karyo_plot,
+                karyo_all_plots instanceof List ? karyo_all_plots : [karyo_all_plots]
             )
         }
         .combine(channel.fromPath("${projectDir}/assets/report-templates/skipped_report.qmd", checkIfExists: true))
@@ -98,8 +103,9 @@ workflow reporting {
         ch_pass_reports.whatshap_blocks.collect().ifEmpty([]),
         ch_pass_reports.clustered_reads.collect().ifEmpty([]),
         ch_pass_reports.skew_tsv.collect().ifEmpty([]),
-        ch_pass_reports.karyotype_tsv.collect().ifEmpty([]),
-        ch_pass_reports.karyotype_plot.collect().ifEmpty([]),
+        ch_pass_reports.karyotype_tsv.mix(ch_skipped_reports.karyotype_tsv).collect().ifEmpty([]),
+        ch_pass_reports.karyotype_plot.mix(ch_skipped_reports.karyotype_plot).collect().ifEmpty([]),
+        ch_pass_reports.karyotype_all_plots.mix(ch_skipped_reports.karyotype_all_plots).collect().ifEmpty([]),
         cgi_bed.map { it[1] }
     )
 

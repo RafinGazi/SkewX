@@ -11,6 +11,7 @@ process REPORT_INDIVIDUAL {
           path(skew_tsv),
           path(karyotype_tsv),
           path(karyotype_plot),
+          path(karyotype_all_plots),
           path(cgi_bed),
           path(report_template)
 
@@ -23,6 +24,7 @@ process REPORT_INDIVIDUAL {
     path(skew_tsv), emit: skew_tsv
     path(karyotype_tsv), emit: karyotype_tsv
     path(karyotype_plot), emit: karyotype_plot
+    path(karyotype_all_plots), emit: karyotype_all_plots
 
     script:
     """
@@ -53,10 +55,14 @@ process REPORT_SKIPPED {
     tuple val(meta),
           path(karyotype_tsv),
           path(karyotype_plot),
+          path(karyotype_all_plots),
           path(report_template)
 
     output:
     path("${meta.id}_skipped_report.qmd"), emit: qmds
+    path(karyotype_tsv),                   emit: karyotype_tsv
+    path(karyotype_plot),                  emit: karyotype_plot
+    path(karyotype_all_plots),             emit: karyotype_all_plots
 
     script:
     """
@@ -88,6 +94,7 @@ process REPORT_BOOK {
         path(skew_tsvs)
         path(karyotype_tsvs)
         path(karyotype_plots)
+        path(karyotype_all_plots)
         path(cgi_bed)
 
     output:

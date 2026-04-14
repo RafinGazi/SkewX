@@ -44,8 +44,9 @@ if (qc_flag == "pass") {
 #| echo: false
 
 kary %>%
-    select(individual, karyotype, karyotype_conf, x_copies, y_copies,
-           chrX_ratio, chrY_ratio, auto_mean_cov) %>%
+    select(any_of(c("individual", "karyotype", "karyotype_conf", 
+                    "x_copies", "y_copies", "chrX_ratio", 
+                    "chrY_ratio", "auto_mean_cov"))) %>%
     gt() %>%
     tab_header(
         title = gt::md("**Inferred Karyotype**"),
@@ -59,6 +60,42 @@ kary %>%
 #| echo: false
 
 knitr::include_graphics("ext_karyotype_plot")
+```
+
+### Genome coverage profile
+
+This plot shows the windowed sequencing coverage across chr18, chr21, chrX and chrY in 1Mb windows, allowing visual inspection of coverage uniformity and any large structural abnormalities.
+
+```{r}
+#| label: karyotype-genome-coverage
+#| echo: false
+#| fig-cap: "Genome coverage profile across chromosomes."
+
+genome_cov_plot <- sub("_coverage_ratios\\.png$", "_genome_coverage.png", "ext_karyotype_plot")
+
+if (file.exists(genome_cov_plot)) {
+    knitr::include_graphics(genome_cov_plot)
+} else {
+    cat("Genome coverage plot not available.")
+}
+```
+
+### RX vs RY
+
+This scatter plot shows the chrX/autosome (RX) and chrY/autosome (RY) coverage ratios for this individual. The position of the point relative to the labelled karyotype regions allows visual confirmation of the inferred karyotype.
+
+```{r}
+#| label: karyotype-rx-ry
+#| echo: false
+#| fig-cap: "RX vs RY coverage ratio scatter plot."
+
+rx_ry_plot <- sub("_coverage_ratios\\.png$", "_rx_ry.png", "ext_karyotype_plot")
+
+if (file.exists(rx_ry_plot)) {
+    knitr::include_graphics(rx_ry_plot)
+} else {
+    cat("RX vs RY plot not available.")
+}
 ```
 
 ## Xp vs Xq Arm Check

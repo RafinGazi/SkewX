@@ -12,6 +12,7 @@ process INFER_KARYOTYPE {
     output:
     tuple val(meta), path("${meta.id}_karyotype.tsv"),          emit: karyotype_tsv
     tuple val(meta), path("${meta.id}_coverage_ratios.png"),    emit: karyotype_plot
+    tuple val(meta), path("${meta.id}_{xp_xq,genome_coverage,rx_ry}.png"),  emit: karyotype_all_plots
 
     script:
     """

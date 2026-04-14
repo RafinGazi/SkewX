@@ -249,19 +249,24 @@ def plot_genome_coverage(windows, autosome_cov, sample):
 
 
 def plot_xp_xq(xp_mean, xq_mean, autosome_cov, sample):
-    if np.isnan(xp_mean) or np.isnan(xq_mean):
-        return
+    fig, ax = plt.subplots(figsize=(5, 5))
 
-    plt.figure(figsize=(5, 5))
-    plt.bar(["Xp", "Xq"], [xp_mean, xq_mean],
-            color=["#6BAED6", "#2171B5"], edgecolor="black")
-    plt.axhline(autosome_cov, linestyle="dashed", color="orange",
-                linewidth=1.5, label=f"Autosome mean ({autosome_cov:.1f}x)")
-    plt.axhline(autosome_cov / 2, linestyle="dotted", color="grey",
-                linewidth=1.2, label=f"Half autosome ({autosome_cov/2:.1f}x)")
-    plt.ylabel("Median coverage")
-    plt.title(f"Xp vs Xq arm coverage — {sample}")
-    plt.legend(fontsize=9)
+    if np.isnan(xp_mean) or np.isnan(xq_mean):
+        ax.text(0.5, 0.5, "Xp/Xq data not available",
+                ha="center", va="center", fontsize=12, color="grey",
+                transform=ax.transAxes)
+        ax.axis("off")
+    else:
+        ax.bar(["Xp", "Xq"], [xp_mean, xq_mean],
+               color=["#6BAED6", "#2171B5"], edgecolor="black")
+        ax.axhline(autosome_cov, linestyle="dashed", color="orange",
+                   linewidth=1.5, label=f"Autosome mean ({autosome_cov:.1f}x)")
+        ax.axhline(autosome_cov / 2, linestyle="dotted", color="grey",
+                   linewidth=1.2, label=f"Half autosome ({autosome_cov/2:.1f}x)")
+        ax.set_ylabel("Median coverage")
+        ax.legend(fontsize=9)
+
+    ax.set_title(f"Xp vs Xq arm coverage — {sample}")
     plt.tight_layout()
     plt.savefig(f"{sample}_xp_xq.png", dpi=150)
     plt.close()
@@ -403,4 +408,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main() 

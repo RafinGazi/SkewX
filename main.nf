@@ -263,14 +263,14 @@ workflow SKEWX {
     ch_karyotype_qc = ch_karyotype.karyotype_tsv
         .map { meta, tsv -> tuple(meta, tsv) }
         .splitCsv(header: true, sep: '\t', elem: 1)
-        .map { meta, row -> tuple(meta + [qc_flag: row.qc_flag]) }
+        .map { meta, row -> meta + [qc_flag: row.qc_flag] }
+
 
     ch_branch = ch_karyotype_qc.branch {
         pass:    it.qc_flag.toString() == "pass"
         skipped: it.qc_flag.toString().startsWith("skipped")
         flagged: it.qc_flag.toString().startsWith("flagged")
     }
-
 
     ch_samples_haplotag_pass = ch_samples_haplotag
         .map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) }
@@ -298,6 +298,7 @@ workflow SKEWX {
             ch_cgibed,
             ch_karyotype.karyotype_tsv,
             ch_karyotype.karyotype_plot,
+            ch_karyotype.karyotype_all_plots,
             ch_branch.pass,
             ch_branch.skipped,
             ch_branch.flagged

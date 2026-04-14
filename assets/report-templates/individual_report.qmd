@@ -457,44 +457,41 @@ kary <- read_tsv(karyotype_tsv, show_col_types = FALSE)
 
 # summary table
 kary %>%
-    select(individual, karyotype, karyotype_conf, x_copies, y_copies,
-           chrX_ratio, chrY_ratio, auto_mean_cov) %>%
+    select(any_of(c("individual", "karyotype", "karyotype_conf", 
+                    "x_copies", "y_copies", "chrX_ratio", 
+                    "chrY_ratio", "auto_mean_cov"))) %>%
     gt() %>%
     tab_header(
         title    = md("**Inferred Karyotype**"),
         subtitle = "Coverage ratio method (BeXY-inspired rounding)"
     ) %>%
     cols_label(
-        individual     = "Individual",
-        karyotype      = "Karyotype",
-        karyotype_conf = "Confidence",
-        x_copies       = "X copies",
-        y_copies       = "Y copies",
-        chrX_ratio     = "chrX/Autosome",
-        chrY_ratio     = "chrY/Autosome",
-        auto_mean_cov  = "Autosomal mean coverage"
-    ) %>%
-    tab_style(
-        style = cell_fill(color = "#d4edda"),
-        locations = cells_body(
-            columns = karyotype,
-            rows    = karyotype_conf == "HIGH"
+        .fn = ~ dplyr::recode(.x,
+            "individual"     = "Individual",
+            "karyotype"      = "Karyotype",
+            "karyotype_conf" = "Confidence",
+            "x_copies"       = "X copies",
+            "y_copies"       = "Y copies",
+            "chrX_ratio"     = "chrX/Autosome",
+            "chrY_ratio"     = "chrY/Autosome",
+            "auto_mean_cov"  = "Autosomal mean coverage"
         )
     ) %>%
-    tab_style(
-        style = cell_fill(color = "#fff3cd"),
-        locations = cells_body(
-            columns = karyotype,
-            rows    = karyotype_conf == "MEDIUM"
-        )
-    ) %>%
-    tab_style(
-        style = cell_fill(color = "#f8d7da"),
-        locations = cells_body(
-            columns = karyotype,
-            rows    = karyotype_conf == "LOW"
-        )
-    ) %>%
+    { if ("karyotype_conf" %in% names(kary))
+        tab_style(.,
+            style = cell_fill(color = "#d4edda"),
+            locations = cells_body(columns = karyotype, rows = karyotype_conf == "HIGH")
+        ) else . } %>%
+    { if ("karyotype_conf" %in% names(kary))
+        tab_style(.,
+            style = cell_fill(color = "#fff3cd"),
+            locations = cells_body(columns = karyotype, rows = karyotype_conf == "MEDIUM")
+        ) else . } %>%
+    { if ("karyotype_conf" %in% names(kary))
+        tab_style(.,
+            style = cell_fill(color = "#f8d7da"),
+            locations = cells_body(columns = karyotype, rows = karyotype_conf == "LOW")
+        ) else . } %>%
     opt_interactive(use_highlight = TRUE, use_compact_mode = TRUE)
 ```
 
@@ -508,6 +505,42 @@ The bar chart below shows mean sequencing coverage for chr18, chr21, chrX and ch
 #| fig-cap: "Coverage ratio plot. Bars show mean coverage relative to autosomal baseline."
 
 knitr::include_graphics("ext_karyotype_plot")
+```
+
+### Genome coverage profile
+
+This plot shows the windowed sequencing coverage across chr18, chr21, chrX and chrY in 1Mb windows, allowing visual inspection of coverage uniformity and any large structural abnormalities.
+
+```{r}
+#| label: karyotype-genome-coverage
+#| echo: false
+#| fig-cap: "Genome coverage profile across chromosomes."
+
+genome_cov_plot <- sub("_coverage_ratios\\.png$", "_genome_coverage.png", "ext_karyotype_plot")
+
+if (file.exists(genome_cov_plot)) {
+    knitr::include_graphics(genome_cov_plot)
+} else {
+    cat("Genome coverage plot not available.")
+}
+```
+
+### RX vs RY
+
+This scatter plot shows the chrX/autosome (RX) and chrY/autosome (RY) coverage ratios for this individual. The position of the point relative to the labelled karyotype regions allows visual confirmation of the inferred karyotype.
+
+```{r}
+#| label: karyotype-rx-ry
+#| echo: false
+#| fig-cap: "RX vs RY coverage ratio scatter plot."
+
+rx_ry_plot <- sub("_coverage_ratios\\.png$", "_rx_ry.png", "ext_karyotype_plot")
+
+if (file.exists(rx_ry_plot)) {
+    knitr::include_graphics(rx_ry_plot)
+} else {
+    cat("RX vs RY plot not available.")
+}
 ```
 
 ### Xp vs Xq arm imbalance
